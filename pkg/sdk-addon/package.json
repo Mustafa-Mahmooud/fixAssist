@@ -1,0 +1,13 @@
+{
+  "name": "fix-sdk-addon",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Fetch/XHR wrapper, release ID and page views for the pinned Sentry browser SDK",
+  "scripts": {
+    "build": "esbuild addon.js --minify --target=es2017 --outfile=dist/addon.min.js",
+    "size": "npm run build && node size.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.5"
+  }
+}

@@ -1,0 +1,46 @@
+{{define "content"}}
+{{template "project_nav" .}}
+{{template "range_tabs" .}}
+<h2>Pages</h2>
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>Page</th><th class="num">Views</th><th class="num">Visitors</th><th class="num">Left here</th><th class="num">Left here (mobile)</th><th class="num">Load time</th><th class="num">Open issues</th></tr></thead>
+    <tbody>
+    {{$id := .Data.Project.ID}}
+    {{range .Data.Pages}}
+      <tr>
+        <td><code>{{.Route}}</code></td>
+        <td class="num">{{.Views}}</td>
+        <td class="num">{{.Visitors}}</td>
+        <td class="num">{{.ExitRate}}</td>
+        <td class="num">{{.MobileExitRate}}</td>
+        <td class="num">{{if .AvgLoadMs}}{{seconds .AvgLoadMs}}{{else}}—{{end}}</td>
+        <td class="num">{{if .OpenIssues}}<a href="/projects/{{$id}}/issues">{{.OpenIssues}}</a>{{else}}0{{end}}</td>
+      </tr>
+    {{else}}<tr><td colspan="7" class="muted">No page views yet.</td></tr>{{end}}
+    </tbody>
+  </table>
+</div>
+<div class="grid">
+  <div class="card table-wrap">
+    <h2 style="margin-top:0">Most-clicked buttons and links</h2>
+    <table>
+      <thead><tr><th>Label</th><th>Page</th><th class="num">Clicks</th></tr></thead>
+      <tbody>
+      {{range .Data.Clicks}}<tr><td>{{.Label}}</td><td><code>{{.Route}}</code></td><td class="num">{{.Clicks}}</td></tr>
+      {{else}}<tr><td colspan="3" class="muted">No clicks yet.</td></tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+  <div class="card table-wrap">
+    <h2 style="margin-top:0">Your events</h2>
+    <table>
+      <thead><tr><th>Event</th><th class="num">Times</th><th class="num">Visitors</th></tr></thead>
+      <tbody>
+      {{range .Data.Events}}<tr><td><code>{{.Name}}</code></td><td class="num">{{.Events}}</td><td class="num">{{.Visitors}}</td></tr>
+      {{else}}<tr><td colspan="3" class="muted">Track your own with <code>fix.track("name")</code>.</td></tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

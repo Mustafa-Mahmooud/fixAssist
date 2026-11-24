@@ -1,0 +1,105 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fix
+          POSTGRES_PASSWORD: fix
+          POSTGRES_DB: fix_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U fix -d fix_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: vet
+        run: go vet ./...
+      - name: test (unit + Postgres; packages share fix_test, so -p 1)
+        run: go test -p 1 ./...
+        env:
+          FIX_TEST_DATABASE_URL: postgres://fix:fix@localhost:5432/fix_test?sslmode=disable
+      - name: sqlc generated code is up to date
+        run: |
+          curl -fsSL https://downloads.sqlc.dev/sqlc_1.29.0_linux_amd64.tar.gz | tar -xz -C /usr/local/bin sqlc
+          sqlc diff
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: built SDK add-on is up to date
+        working-directory: pkg/sdk-addon
+        run: |
+          npm ci
+          npm run build
+          git diff --exit-code dist/
+          npm run size --silent
+
+  image:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.name.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64 # Google Cloud e2-micro (x86)
+          push: true
+          tags: ${{ steps.name.outputs.image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: image
+    runs-on: ubuntu-24.04
+    environment: production
+    concurrency: production
+    permissions:
+      contents: read
+      packages: read # the server logs in to GHCR with this job's token to pull
+    steps:
+      - uses: actions/checkout@v4
+      - name: ssh setup
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+      - name: copy deploy files
+        run: |
+          scp -q deploy/compose.yml deploy/Caddyfile deploy/deploy.sh deploy/backup.sh deploy/restore-test.sh deploy/geoip.sh \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/fixassist/"
+          scp -q deploy/postgres/Dockerfile "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/fixassist/postgres/"
+      - name: release
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "docker login ghcr.io -u '${{ github.actor }}' --password-stdin >/dev/null && /opt/fixassist/deploy.sh '${{ needs.image.outputs.image }}'"

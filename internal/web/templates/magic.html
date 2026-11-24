@@ -1,0 +1,14 @@
+{{define "content"}}
+<h1>Sign in</h1>
+{{if .Error}}
+  <p class="flash error">{{.Error}}</p>
+  <p><a href="/login">Request a new link</a></p>
+{{else}}
+  <form method="post" action="/auth/magic" class="card">
+    <input type="hidden" name="token" value="{{.Data.Token}}">
+    <p>Continue to Fix Assistant.</p>
+    <p><button type="submit">Sign in</button></p>
+  </form>
+  <p class="small muted">This extra click stops email link scanners from using up your link.</p>
+{{end}}
+{{end}}

@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.png binary
+*.exe binary
+# Byte-exact fixtures and build output
+internal/ingest/testdata/** -text
+pkg/sdk-addon/dist/** -text
+pkg/sdk-addon/vendor/** -text

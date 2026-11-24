@@ -1,0 +1,28 @@
+{{define "content"}}
+<p class="muted small"><a href="/admin">Admin</a> /</p>
+<h1>GitHub App</h1>
+{{with .Data.Created}}
+  <div class="card">
+    <p><b>The app “{{.Slug}}” was created.</b> Put these in the server's <code>.env</code> and redeploy. They're shown only once.</p>
+    <pre>GITHUB_APP_ID={{.ID}}
+GITHUB_APP_SLUG={{.Slug}}
+GITHUB_CLIENT_ID={{.ClientID}}
+GITHUB_CLIENT_SECRET={{.ClientSecret}}
+GITHUB_APP_PRIVATE_KEY="{{.PEM}}"</pre>
+    <p class="muted small">Then founders see “Connect your code” on their Setup page.</p>
+  </div>
+{{else}}
+  {{if .Data.Configured}}
+    <div class="card"><p>Configured: <b>{{.Data.Slug}}</b> (app id {{.Data.AppID}}). Founders can connect a repository from their Setup page.</p></div>
+  {{else}}
+    <div class="card">
+      <p>Create the GitHub App that lets fix prompts name the exact file and line. It asks founders only for <b>read-only</b> access to the repositories they choose.</p>
+      <form method="post" action="{{.Data.Action}}">
+        <input type="hidden" name="manifest" value="{{.Data.Manifest}}">
+        <button type="submit">Create the GitHub App on GitHub</button>
+      </form>
+      <p class="muted small">GitHub asks you to confirm, then sends you back here with the app's keys.</p>
+    </div>
+  {{end}}
+{{end}}
+{{end}}

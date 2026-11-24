@@ -1,0 +1,114 @@
+{{define "content"}}
+{{template "project_nav" .}}
+{{with .Data.Issue}}
+<p class="kind">{{kindName .Kind}} · <span class="badge {{.Status}}">{{statusName .Status}}</span>{{if gt .RegressionCount 0}} · came back {{.RegressionCount}}×{{end}}</p>
+<h1 style="overflow-wrap:anywhere">{{.Title}}</h1>
+<div class="grid card">
+  <div class="stat"><span class="muted small">People affected</span><b>{{.UserCount}}</b></div>
+  <div class="stat"><span class="muted small">Times it happened</span><b>{{.EventCount}}</b></div>
+  <div class="stat"><span class="muted small">Page</span><b style="font-size:1rem">{{or .Route.String "—"}}</b></div>
+  <div class="stat"><span class="muted small">First seen</span><b style="font-size:1rem">{{ago .FirstSeenAt.Time}}</b></div>
+  <div class="stat"><span class="muted small">Last seen</span><b style="font-size:1rem">{{ago .LastSeenAt.Time}}</b></div>
+</div>
+{{end}}
+<div class="card">
+  <p class="muted small">Last 7 days, per hour</p>
+  {{.Data.Spark}}
+</div>
+{{$p := .Data.Project}}{{$i := .Data.Issue}}{{$csrf := .Session.CSRF}}
+{{with .Data.Suggestion}}
+<div class="card">
+  <p class="kind"><span class="badge sev-{{.Severity}}">{{severityName .Severity}}</span>{{if eq .Origin "cache"}} · <span class="badge fixed">Proven fix</span>{{end}}{{if gt .Attempt 1}} · second attempt: the first fix didn't stop it{{end}}</p>
+  {{with $.Data.Track}}<p class="muted small">This fix worked {{.Worked}} of {{add .Worked .Failed}} times across {{.Apps}} {{if eq .Apps 1}}app{{else}}apps{{end}} with the same error.</p>{{end}}
+  {{with $.Data.Similar}}<p class="muted small">Similar errors in other apps were fixed {{.Worked}} of {{add .Worked .Failed}} times.</p>{{end}}
+  <h2 style="margin-top:.5rem">{{code .Title}}</h2>
+  <p><b>What broke.</b> {{code .WhatBroke}}</p>
+  <p><b>Who is affected.</b> {{code .WhoIsAffected}}</p>
+  {{if .Why}}<p><b>Why.</b> {{code .Why}}</p>{{else}}<p><b>Why.</b> <span class="muted">{{agentName $.Data.Agent}} will find the cause in your app's code; the prompt below gives it everything we know.</span></p>{{end}}
+</div>
+<div class="card">
+  <div class="row spread">
+    <h2 style="margin:0">Fix it with {{agentName $.Data.Agent}}</h2>
+    <nav class="tabs" style="margin:0" aria-label="AI agent">
+      {{range $.Data.Agents}}<a class="{{if eq . $.Data.Agent}}on{{end}}" href="?agent={{.}}">{{agentName .}}</a>{{end}}
+    </nav>
+  </div>
+  <p class="muted">Paste this into {{agentName $.Data.Agent}} as a new message, then publish your app. We'll check whether it worked after the next release.</p>
+  <div class="copy-wrap">
+    <pre id="fix-prompt">{{$.Data.Prompt}}</pre>
+    <button type="button" class="secondary" data-copy="#fix-prompt">Copy</button>
+  </div>
+  <p><b>How to check.</b> {{code .HowToCheck}}</p>
+</div>
+<div class="card">
+  <h2 style="margin-top:0">Did it work?</h2>
+  {{with $.Data.Verify}}
+    {{if .ProbablyFixed}}
+      <p class="flash"><b>Probably fixed.</b> It hasn't happened since your new version went live, but there hasn't been enough traffic on this page in {{.LowTrafficDays}} days to be sure. Did it work?</p>
+    {{else if .Release}}
+      <p class="muted">Checking automatically on app version <code>{{.Release}}</code>: we mark it fixed when this page has had {{.NeedSessions}} visits and {{.NeedHours}} hours have passed without it happening again.</p>
+      <div class="grid">
+        <div class="stat"><span class="muted small">Visits on the new version</span><b>{{.Sessions}} / {{.NeedSessions}}</b><progress max="100" value="{{.SessionsPct}}"></progress></div>
+        <div class="stat"><span class="muted small">Hours since it went live</span><b>{{.Hours}} / {{.NeedHours}}</b><progress max="100" value="{{.HoursPct}}"></progress></div>
+      </div>
+    {{else}}
+      <p class="muted">Waiting for your next published version; we'll check automatically once it's live.</p>
+    {{end}}
+  {{else}}
+    <p class="muted">After you publish the fix we check automatically. You can also tell us yourself; your answer always wins.</p>
+  {{end}}
+  <div class="row">
+    {{range $o := (list "worked" "failed" "partial")}}
+    <form method="post" action="/projects/{{$p.ID}}/issues/{{$i.ID}}/feedback">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <button name="outcome" value="{{$o}}" class="{{if ne $o "worked"}}secondary{{end}}">{{outcomeLabel $o}}</button>
+    </form>
+    {{end}}
+    {{if or (eq $i.Status "explained") (eq $i.Status "open")}}
+    <form method="post" action="/projects/{{$p.ID}}/issues/{{$i.ID}}/applied">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <button class="secondary">I applied the fix</button>
+    </form>
+    {{end}}
+  </div>
+  {{with $.Data.Feedback}}
+  <p class="muted small" style="margin-top:1rem">
+    {{range $n, $f := .}}{{if $n}} · {{end}}{{outcomeLabel $f.Outcome}} ({{if eq $f.Source "implicit"}}checked automatically{{else}}you said{{end}}, {{ago $f.CreatedAt.Time}}){{end}}
+  </p>
+  {{end}}
+</div>
+{{else}}
+<div class="card">
+  <p class="muted">Not explained yet. Issues are explained automatically once they affect 2 people or happen 3 times.</p>
+  <form method="post" action="/projects/{{$p.ID}}/issues/{{$i.ID}}/explain">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <button type="submit">Explain now</button>
+  </form>
+</div>
+{{end}}
+<div class="card row">
+  {{if .Data.Suggestion}}
+  <form method="post" action="/projects/{{$p.ID}}/issues/{{$i.ID}}/explain">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <button type="submit" class="secondary">Refresh explanation</button>
+  </form>
+  {{end}}
+  <form method="post" action="/projects/{{$p.ID}}/issues/{{$i.ID}}/status">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    {{if eq $i.Status "ignored"}}
+      <button name="status" value="open" class="secondary">Stop ignoring</button>
+    {{else}}
+      <button name="status" value="ignored" class="secondary">Ignore this issue</button>
+    {{end}}
+  </form>
+</div>
+<h2>Details for reviewers</h2>
+<div class="card small">
+  <p><b>Signature</b></p><pre>{{.Data.Issue.Signature}}</pre>
+  <p><b>Fingerprint</b> <code>{{.Data.Issue.Fingerprint}}</code></p>
+  <p><b>Releases</b> first <code>{{or .Data.Issue.FirstReleaseID.String "—"}}</code>, last <code>{{or .Data.Issue.LastReleaseID.String "—"}}</code></p>
+  {{range .Data.Samples}}
+    <details><summary>Sample from {{ago .ReceivedAt.Time}} · release {{or .ReleaseID.String "—"}}</summary><pre>{{prettyJSON .Payload}}</pre></details>
+  {{end}}
+</div>
+{{end}}

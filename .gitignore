@@ -1,0 +1,31 @@
+# Go
+/bin/
+*.exe
+*.test
+*.out
+
+# Node
+node_modules/
+dist/
+spike/app/.env.local
+spike/app/src/buildinfo.js
+
+# Supabase local state
+spike/supabase/.branches/
+spike/supabase/.temp/
+
+# Env / secrets
+.env
+.env.*
+
+# The built add-on is embedded in the Go binary, so it is committed.
+!pkg/sdk-addon/dist/
+
+# Local scratch (dev mail, screenshots)
+tmp/
+
+# Fixed copy built by the Phase 4 fix check
+spike/fixcheck/app/node_modules
+spike/fixcheck/app/dist
+spike/fixcheck/app/.env.local
+spike/fixcheck/app/src/buildinfo.js

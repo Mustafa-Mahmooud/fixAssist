@@ -1,0 +1,64 @@
+{{define "project_nav"}}
+<div class="row spread">
+  <div>
+    <p class="muted small"><a href="/projects">Projects</a> /</p>
+    <h1>{{.Data.Project.Name}}</h1>
+  </div>
+  <nav class="tabs">
+    <a class="{{if eq .Title "Overview"}}on{{end}}" href="/projects/{{.Data.Project.ID}}/overview">Overview</a>
+    <a class="{{if eq .Title "Issues"}}on{{end}}" href="/projects/{{.Data.Project.ID}}/issues">Issues</a>
+    <a class="{{if eq .Title "Pages"}}on{{end}}" href="/projects/{{.Data.Project.ID}}/pages">Pages</a>
+    <a class="{{if eq .Title "Funnels"}}on{{end}}" href="/projects/{{.Data.Project.ID}}/funnels">Funnels</a>
+    <a class="{{if eq .Title "Insights"}}on{{end}}" href="/projects/{{.Data.Project.ID}}/insights">Insights</a>
+    <a class="{{if eq .Title "Alerts"}}on{{end}}" href="/projects/{{.Data.Project.ID}}/alerts">Alerts</a>
+    <a class="{{if eq .Title "Setup"}}on{{end}}" href="/projects/{{.Data.Project.ID}}/setup">Setup</a>
+  </nav>
+</div>
+{{end}}
+
+{{define "setup_status"}}
+<div id="setup-status"{{if not .Events}} hx-get="/projects/{{.ProjectID}}/setup/status" hx-trigger="every 3s" hx-swap="outerHTML"{{end}}>
+  {{if .Events}}
+    <p class="status-line"><span class="dot ok"></span><b>Connected.</b> {{.Events}} events in the last 30 days, the latest {{ago .LastEventAt}}.</p>
+    <p><a class="button" href="/projects/{{.ProjectID}}/issues">See issues</a></p>
+  {{else}}
+    <p class="status-line"><span class="dot"></span>Waiting for the first event…</p>
+  {{end}}
+</div>
+{{end}}
+
+{{define "issues_table"}}
+<div id="issues">
+{{if .Issues}}
+<div class="card table-wrap">
+  <table class="issues">
+    <thead><tr><th>Issue</th><th class="num">People</th><th class="num">Times</th><th>Page</th><th>Status</th><th class="num">Last seen</th></tr></thead>
+    <tbody>
+    {{$id := .Project.ID}}
+    {{range .Issues}}
+      <tr>
+        <td><span class="kind">{{kindName .Kind}}</span><br><a class="title" href="/projects/{{$id}}/issues/{{.ID}}">{{.Title}}</a></td>
+        <td class="num" data-label="{{if eq .UserCount 1}}person{{else}}people{{end}}">{{.UserCount}}</td>
+        <td class="num" data-label="{{if eq .EventCount 1}}time{{else}}times{{end}}">{{.EventCount}}</td>
+        <td><code>{{or .Route.String "—"}}</code></td>
+        <td><span class="badge {{.Status}}">{{statusName .Status}}</span></td>
+        <td class="num">{{ago .LastSeenAt.Time}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<div class="card empty">
+  {{if eq .Status "active"}}No open issues. <a href="/projects/{{.Project.ID}}/setup">Check the setup</a> if you expected some.{{else}}Nothing here.{{end}}
+</div>
+{{end}}
+</div>
+{{end}}
+
+{{define "range_tabs"}}
+<nav class="tabs" aria-label="Date range">
+  <a class="{{if eq .Data.Range.Days 7}}on{{end}}" href="?days=7">Last 7 days</a>
+  <a class="{{if eq .Data.Range.Days 30}}on{{end}}" href="?days=30">Last 30 days</a>
+</nav>
+{{end}}

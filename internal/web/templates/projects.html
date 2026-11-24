@@ -1,0 +1,48 @@
+{{define "content"}}
+<h1>Projects</h1>
+<p class="muted">{{.Session.OrgName}}</p>
+{{if .Error}}<p class="flash error">{{.Error}}</p>{{end}}
+{{if .Data.Projects}}
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>App</th><th>AI agent</th><th>Backend</th><th class="num">Open issues</th><th></th></tr></thead>
+    <tbody>
+    {{range .Data.Projects}}
+      <tr>
+        <td><a class="title" href="/projects/{{.ID}}/issues">{{.Name}}</a></td>
+        <td>{{agentName .TargetAgent}}</td>
+        <td>{{backendName .Backend}}</td>
+        <td class="num">{{.OpenIssues}}</td>
+        <td class="num"><a href="/projects/{{.ID}}/setup">Setup</a></td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+<h2>{{if .Data.Projects}}Add another app{{else}}Connect your first app{{end}}</h2>
+<form method="post" action="/projects" class="card">
+  <input type="hidden" name="csrf" value="{{.Session.CSRF}}">
+  <label for="name">App name</label>
+  <input id="name" type="text" name="name" required maxlength="80" placeholder="My booking app">
+  <div class="grid">
+    <div>
+      <label for="agent">Built with</label>
+      <select id="agent" name="agent">
+        {{range .Data.Agents}}<option value="{{.}}">{{agentName .}}</option>{{end}}
+      </select>
+    </div>
+    <div>
+      <label for="backend">Backend</label>
+      <select id="backend" name="backend">
+        <option value="supabase">Supabase</option>
+        <option value="firebase">Firebase</option>
+        <option value="unknown">Other / not sure</option>
+      </select>
+    </div>
+  </div>
+  <label for="domains">Your app's domain <span class="muted small">(optional; events from other sites are rejected)</span></label>
+  <input id="domains" type="text" name="domains" placeholder="myapp.lovable.app">
+  <p><button type="submit">Create and get install steps</button></p>
+</form>
+{{end}}

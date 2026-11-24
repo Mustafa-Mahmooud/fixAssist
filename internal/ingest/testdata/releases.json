@@ -1,0 +1,54 @@
+{
+  "generated_at": "2026-11-22T21:26:16.553Z",
+  "mode": "capture",
+  "builds": [
+    {
+      "build": 1,
+      "assets": [
+        "index-DpRClB3D.js"
+      ],
+      "loads": [
+        "fix-0bdd6fbc7666354a",
+        "fix-0bdd6fbc7666354a"
+      ],
+      "statuses": {
+        "js_typeerror": 200,
+        "js_custom": 200,
+        "js_rejection": 200,
+        "net_22001": 200,
+        "net_42501": 200,
+        "net_auth": 200,
+        "net_404": 200,
+        "net_dead": 200
+      },
+      "pageview_statuses": [
+        204,
+        204
+      ]
+    },
+    {
+      "build": 2,
+      "assets": [
+        "index-Cp8NgheP.js"
+      ],
+      "loads": [
+        "fix-209cb2575aa7e6ca",
+        "fix-209cb2575aa7e6ca"
+      ],
+      "statuses": {
+        "js_typeerror": 200,
+        "js_custom": 200,
+        "js_rejection": 200,
+        "net_22001": 200,
+        "net_42501": 200,
+        "net_auth": 200,
+        "net_404": 200,
+        "net_dead": 200
+      },
+      "pageview_statuses": [
+        204,
+        204
+      ]
+    }
+  ]
+}

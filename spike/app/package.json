@@ -1,0 +1,20 @@
+{
+  "name": "fix-spike-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "prebuild": "node prebuild.mjs",
+    "build": "vite build",
+    "dev": "node prebuild.mjs && vite"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.50.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "4.5.2",
+    "vite": "6.3.5"
+  }
+}

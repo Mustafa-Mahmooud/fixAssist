@@ -1,0 +1,43 @@
+{{define "content"}}
+{{template "project_nav" .}}
+<div class="card">
+  <h2 style="margin-top:0">1. Ask {{agentName .Data.Project.TargetAgent}} to install it</h2>
+  <p class="muted">Paste this into {{agentName .Data.Project.TargetAgent}} as a new message, then publish your app.</p>
+  <div class="copy-wrap">
+    <pre id="install-prompt">{{.Data.Prompt}}</pre>
+    <button type="button" class="secondary" data-copy="#install-prompt">Copy</button>
+  </div>
+  <details>
+    <summary>Or add the script tag yourself</summary>
+    <p class="muted small">Put it inside <code>&lt;head&gt;</code>, before any other script.</p>
+    <div class="copy-wrap">
+      <pre id="script-tag">{{.Data.ScriptTag}}</pre>
+      <button type="button" class="secondary" data-copy="#script-tag">Copy</button>
+    </div>
+  </details>
+</div>
+{{with .Data.GitHub}}{{if .Enabled}}
+<div class="card">
+  <h2 style="margin-top:0">Connect your code <span class="muted small">(optional)</span></h2>
+  {{if .Repo}}
+    <p>Connected to <code>{{.Repo}}</code>. Fix prompts now point to the exact file and line.</p>
+    <form method="post" action="/projects/{{$.Data.Project.ID}}/github/disconnect"><input type="hidden" name="csrf" value="{{$.Session.CSRF}}"><button class="link">Disconnect</button></form>
+  {{else if .Choose}}
+    <form method="post" action="/projects/{{$.Data.Project.ID}}/github/repo" class="row">
+      <input type="hidden" name="csrf" value="{{$.Session.CSRF}}">
+      <label for="repo" style="margin:0">Which repository is this app?</label>
+      <select id="repo" name="repo" style="width:auto">{{range .Choose}}<option>{{.}}</option>{{end}}</select>
+      <button type="submit">Use it</button>
+    </form>
+  {{else}}
+    <p class="muted">If your app's code is on GitHub (Lovable, Bolt and Cursor can sync it), connect it so fix prompts can say exactly which file and line to change. We only read code; it's never stored or shared.</p>
+    <form method="post" action="/projects/{{$.Data.Project.ID}}/github/connect"><input type="hidden" name="csrf" value="{{$.Session.CSRF}}"><button class="secondary">Connect GitHub</button></form>
+  {{end}}
+</div>
+{{end}}{{end}}
+<div class="card">
+  <h2 style="margin-top:0">2. Open your app</h2>
+  <p class="muted">Visit any page of the published app. The first event shows up here as soon as it arrives.</p>
+  {{template "setup_status" .Data.Status}}
+</div>
+{{end}}

@@ -1,0 +1,108 @@
+# Production: one VM, three services (FDR "Deployment and operations").
+# Sized for a Google Cloud e2-micro (2 shared vCPU, 1 GB RAM + 2 GB swap).
+# Lives in /opt/fixassist on the server next to .env (see deploy/env.example).
+name: fixassist
+
+services:
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+  app:
+    image: ${APP_IMAGE:?set APP_IMAGE in .env}
+    restart: unless-stopped
+    command: ["serve", "--addr=:8787"]
+    volumes:
+      - ./geo:/geo:ro
+    environment:
+      DATABASE_URL: postgres://fix:${POSTGRES_PASSWORD}@postgres:5432/fix?sslmode=disable
+      INGEST_PUBLIC_URL: https://${DOMAIN}
+      APP_PUBLIC_URL: https://${DOMAIN}
+      EMAIL_MODE: ${EMAIL_MODE:-off}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      APP_SECRET: ${APP_SECRET:?set APP_SECRET in .env}
+      STAFF_EMAILS: ${STAFF_EMAILS:-}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Usage analytics: country lookup (deploy/geoip.sh) and the real client
+      # IP from Caddy's X-Forwarded-For.
+      GEOIP_DB: /geo/dbip.mmdb
+      TRUST_PROXY: "1"
+      # GitHub App code context (optional; created from /admin/github)
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      # Keep the Go heap well inside the 1 GB box.
+      GOMEMLIMIT: 200MiB
+    # SIGTERM: stop accepting, drain in-flight requests (10 s), stop River.
+    stop_grace_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    build: ./postgres
+    image: fixassist-postgres:16
+    restart: unless-stopped
+    shm_size: 128mb
+    environment:
+      POSTGRES_USER: fix
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: fix
+      # WAL-G -> Cloudflare R2. Archiving is skipped while WALG_S3_PREFIX is empty.
+      WALG_S3_PREFIX: ${WALG_S3_PREFIX:-}
+      AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      AWS_ENDPOINT: ${R2_ENDPOINT:-}
+      AWS_REGION: auto
+      AWS_S3_FORCE_PATH_STYLE: "true"
+      WALG_COMPRESSION_METHOD: brotli
+      PGHOST: /var/run/postgresql
+      PGUSER: fix
+      PGDATABASE: fix
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=384MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_connections=30
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_timeout=300
+      - -c
+      - archive_command=[ -z "$$WALG_S3_PREFIX" ] || wal-g wal-push %p
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fix -d fix"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  caddy_data:
+  caddy_config:
+  pgdata:

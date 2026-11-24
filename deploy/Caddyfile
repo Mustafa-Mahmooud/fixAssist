@@ -1,0 +1,14 @@
+# One hostname serves the dashboard, ingest (/api, /v1/pv) and the SDK (/sdk).
+# Caddy gets and renews the Let's Encrypt certificate automatically.
+{$DOMAIN} {
+	encode zstd gzip
+	# Metrics are for the box only (curl from the server, or a bearer token
+	# inside the Docker network), never the internet.
+	@metrics path /metrics
+	respond @metrics 404
+	reverse_proxy app:8787
+	log {
+		output stdout
+		format json
+	}
+}

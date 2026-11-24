@@ -1,0 +1,33 @@
+{{define "content"}}
+{{template "project_nav" .}}
+{{$p := .Data.Project}}{{$csrf := .Session.CSRF}}
+<div class="row spread">
+  <p class="muted">Every Monday we look at your last 7 days and suggest up to 3 changes to get more sign-ups, each with a prompt for your AI agent. After your next release we check whether it helped.</p>
+  <form method="post" action="/projects/{{$p.ID}}/insights/generate"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="secondary">Find insights now</button></form>
+</div>
+{{range .Data.Insights}}
+<div class="card">
+  <p class="kind">Week of {{.Week.Time.Format "2 Jan"}}{{with .Outcome}}{{if .Valid}} · <span class="badge {{if eq .String "worked"}}fixed{{else if eq .String "worse"}}open{{else}}ignored{{end}}">{{insightOutcome .String}}</span>{{end}}{{end}}</p>
+  <h2 style="margin-top:.4rem">{{.Title}}</h2>
+  <p><b>What we saw.</b> {{.Evidence}}</p>
+  <p><b>Idea.</b> {{.Hypothesis}}</p>
+  <details>
+    <summary>Prompt for your AI agent</summary>
+    <div class="copy-wrap">
+      <pre id="insight-{{.ID}}">{{.Prompt}}</pre>
+      <button type="button" class="secondary" data-copy="#insight-{{.ID}}">Copy</button>
+    </div>
+  </details>
+  {{if .Result}}<p><b>Result.</b> {{.Result}}</p>{{else}}<p class="muted small">{{.Status}}</p>{{end}}
+  <form method="post" action="/projects/{{$p.ID}}/insights/{{.ID}}/outcome" class="row">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <span class="muted small">Did it help?</span>
+    <button name="outcome" value="worked" class="secondary">Yes</button>
+    <button name="outcome" value="no_change" class="secondary">No change</button>
+    <button name="outcome" value="worse" class="secondary">Worse</button>
+  </form>
+</div>
+{{else}}
+<div class="card empty">No insights yet. They need about a week of visits (and work best with a funnel set up).</div>
+{{end}}
+{{end}}

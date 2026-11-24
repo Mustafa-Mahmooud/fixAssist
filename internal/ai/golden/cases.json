@@ -1,0 +1,206 @@
+[
+  {
+    "name": "spike/js_typeerror",
+    "route": "/profile",
+    "users": 2, "events": 4,
+    "event": {"exception": {"values": [{"type": "TypeError", "value": "Cannot read properties of undefined (reading 'profile')",
+      "stacktrace": {"frames": [{"filename": "https://app.example.com/assets/index-DpRClB3D.js", "function": "Object.run"}, {"filename": "https://app.example.com/assets/index-DpRClB3D.js", "function": "Xv"}]}}]},
+      "request": {"url": "https://app.example.com/profile"}},
+    "expect": {"catalog": "js.null_property", "mentions": ["profile", "/profile", "loading"], "must_not": ["rewrite the app"]},
+    "spike_case": "js_typeerror"
+  },
+  {
+    "name": "spike/js_custom",
+    "route": "/checkout",
+    "users": 3, "events": 3,
+    "event": {"exception": {"values": [{"type": "Error", "value": "Checkout failed for order 1795381381069"}]}, "request": {"url": "https://app.example.com/checkout"}},
+    "expect": {"catalog": "", "mentions": ["Checkout failed", "/checkout", "one sentence"], "must_not": []},
+    "spike_case": "js_custom"
+  },
+  {
+    "name": "spike/js_rejection",
+    "route": "/",
+    "users": 2, "events": 2,
+    "event": {"exception": {"values": [{"type": "Error", "value": "Payment provider unavailable", "mechanism": {"type": "onunhandledrejection"}}]}, "request": {"url": "https://app.example.com/"}},
+    "expect": {"catalog": "", "mentions": ["Payment provider unavailable"], "must_not": []},
+    "spike_case": "js_rejection"
+  },
+  {
+    "name": "spike/net_22001",
+    "route": "/signup",
+    "users": 4, "events": 6,
+    "event": {"exception": {"values": [{"type": "HTTPError", "value": "POST /rest/v1/profiles 400"}]}, "request": {"url": "https://app.example.com/signup"},
+      "contexts": {"fix_http": {"method": "POST", "url": "https://abc.supabase.co/rest/v1/profiles?columns=", "status": 400,
+        "body": "{\"code\":\"22001\",\"details\":null,\"hint\":null,\"message\":\"value too long for type character varying(20)\"}"}}},
+    "expect": {"catalog": "pg.value_too_long", "severity": "high", "mentions": ["profiles", "varchar(20)", "text", "migration"], "must_not": ["drop table"]},
+    "spike_case": "net_22001"
+  },
+  {
+    "name": "spike/net_42501",
+    "route": "/settings",
+    "users": 2, "events": 5,
+    "event": {"exception": {"values": [{"type": "HTTPError", "value": "POST /rest/v1/secrets 401"}]}, "request": {"url": "https://app.example.com/settings"},
+      "contexts": {"fix_http": {"method": "POST", "url": "https://abc.supabase.co/rest/v1/secrets?columns=", "status": 401,
+        "body": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level security policy for table \\\"secrets\\\"\"}"}}},
+    "expect": {"catalog": "pg.rls_denied", "mentions": ["secrets", "auth.uid()", "policy", "log in"], "must_not": ["disable row level security", "using (true)", "to anon"]},
+    "spike_case": "net_42501"
+  },
+  {
+    "name": "spike/net_auth",
+    "route": "/login",
+    "users": 5, "events": 9,
+    "event": {"exception": {"values": [{"type": "HTTPError", "value": "POST /auth/v1/token 400"}]}, "request": {"url": "https://app.example.com/login"},
+      "contexts": {"fix_http": {"method": "POST", "url": "https://abc.supabase.co/auth/v1/token?grant_type=", "status": 400,
+        "body": "{\"code\":\"invalid_credentials\",\"message\":\"Invalid login credentials\"}"}}},
+    "expect": {"catalog": "auth.invalid_credentials", "severity": "low", "mentions": ["Wrong email or password", "resetPasswordForEmail"], "must_not": []},
+    "spike_case": "net_auth"
+  },
+  {
+    "name": "spike/net_404",
+    "route": "/dashboard",
+    "users": 2, "events": 2,
+    "event": {"exception": {"values": [{"type": "HTTPError", "value": "GET /rest/v1/missing_table 404"}]}, "request": {"url": "https://app.example.com/dashboard"},
+      "contexts": {"fix_http": {"method": "GET", "url": "https://abc.supabase.co/rest/v1/missing_table?select=&id=", "status": 404,
+        "body": "{\"code\":\"PGRST205\",\"details\":null,\"hint\":\"Perhaps you meant the table 'public.profiles'\",\"message\":\"Could not find the table 'public.missing_table' in the schema cache\"}"}}},
+    "expect": {"catalog": "pg.missing_table", "mentions": ["missing_table", "profiles"], "must_not": ["rename existing tables to"]},
+    "spike_case": "net_404"
+  },
+  {
+    "name": "spike/net_dead",
+    "route": "/",
+    "users": 2, "events": 2,
+    "event": {"exception": {"values": [{"type": "HTTPError", "value": "GET /ping failed: Failed to fetch"}]}, "request": {"url": "https://app.example.com/"},
+      "contexts": {"fix_http": {"method": "GET", "url": "http://127.0.0.1:9/ping", "status": 0, "body": "", "error": "Failed to fetch"}}},
+    "expect": {"catalog": "net.local_address", "mentions": ["127.0.0.1:9", "environment variable"], "must_not": []},
+    "spike_case": "net_dead"
+  },
+  {
+    "name": "pg/unique_violation",
+    "route": "/signup",
+    "users": 3, "events": 4,
+    "event": {"exception": {"values": [{"type": "HTTPError", "value": "POST /rest/v1/members 409"}]}, "request": {"url": "https://app.example.com/signup"},
+      "contexts": {"fix_http": {"method": "POST", "url": "https://abc.supabase.co/rest/v1/members", "status": 409,
+        "body": "{\"code\":\"23505\",\"details\":\"Key (email)=([email]) already exists.\",\"hint\":null,\"message\":\"duplicate key value violates unique constraint \\\"members_email_key\\\"\"}"}}},
+    "expect": {"catalog": "pg.unique_violation", "mentions": ["members", "email", "upsert"], "must_not": ["drop the unique", "remove the unique constraint"]},
+    "spike_case": "pg_unique"
+  },
+  {
+    "name": "pg/not_null",
+    "route": "/team",
+    "users": 2, "events": 3,
+    "event": {"exception": {"values": [{"type": "HTTPError", "value": "POST /rest/v1/members 400"}]}, "request": {"url": "https://app.example.com/team"},
+      "contexts": {"fix_http": {"method": "POST", "url": "https://abc.supabase.co/rest/v1/members", "status": 400,
+        "body": "{\"code\":\"23502\",\"details\":\"Failing row contains (…).\",\"hint\":null,\"message\":\"null value in column \\\"name\\\" of relation \\\"members\\\" violates not-null constraint\"}"}}},
+    "expect": {"catalog": "pg.not_null", "mentions": ["name", "members", "required"], "must_not": ["drop not null"]},
+    "spike_case": "pg_not_null"
+  },
+  {
+    "name": "pg/foreign_key",
+    "route": "/orders/new",
+    "users": 2, "events": 2,
+    "event": {"exception": {"values": [{"type": "HTTPError", "value": "POST /rest/v1/orders 409"}]}, "request": {"url": "https://app.example.com/orders/new"},
+      "contexts": {"fix_http": {"method": "POST", "url": "https://abc.supabase.co/rest/v1/orders", "status": 409,
+        "body": "{\"code\":\"23503\",\"details\":\"Key (member_id)=(<uuid>) is not present in table \\\"members\\\".\",\"hint\":null,\"message\":\"insert or update on table \\\"orders\\\" violates foreign key constraint \\\"orders_member_id_fkey\\\"\"}"}}},
+    "expect": {"catalog": "pg.foreign_key", "mentions": ["orders", "member_id", "members"], "must_not": ["drop the foreign key", "remove the foreign key constraint"]},
+    "spike_case": ""
+  },
+  {
+    "name": "pg/invalid_uuid",
+    "route": "/members/<id>",
+    "users": 3, "events": 8,
+    "event": {"exception": {"values": [{"type": "HTTPError", "value": "GET /rest/v1/members 400"}]}, "request": {"url": "https://app.example.com/members/123"},
+      "contexts": {"fix_http": {"method": "GET", "url": "https://abc.supabase.co/rest/v1/members?select=&id=", "status": 400,
+        "body": "{\"code\":\"22P02\",\"details\":null,\"hint\":null,\"message\":\"invalid input syntax for type uuid: \\\"undefined\\\"\"}"}}},
+    "expect": {"catalog": "pg.invalid_input", "mentions": ["undefined", "uuid", "members"], "must_not": []},
+    "spike_case": "pg_invalid_uuid"
+  },
+  {
+    "name": "pg/single_row",
+    "route": "/account",
+    "users": 4, "events": 4,
+    "event": {"exception": {"values": [{"type": "HTTPError", "value": "GET /rest/v1/members 406"}]}, "request": {"url": "https://app.example.com/account"},
+      "contexts": {"fix_http": {"method": "GET", "url": "https://abc.supabase.co/rest/v1/members?select=&email=", "status": 406,
+        "body": "{\"code\":\"PGRST116\",\"details\":\"The result contains 0 rows\",\"hint\":null,\"message\":\"JSON object requested, multiple (or no) rows returned\"}"}}},
+    "expect": {"catalog": "pg.single_row", "mentions": ["maybeSingle", "members", "empty state"], "must_not": []},
+    "spike_case": "pg_single"
+  },
+  {
+    "name": "auth/weak_password",
+    "route": "/signup",
+    "users": 3, "events": 3,
+    "event": {"exception": {"values": [{"type": "HTTPError", "value": "POST /auth/v1/signup 422"}]}, "request": {"url": "https://app.example.com/signup"},
+      "contexts": {"fix_http": {"method": "POST", "url": "https://abc.supabase.co/auth/v1/signup", "status": 422,
+        "body": "{\"code\":\"weak_password\",\"message\":\"Password should be at least 6 characters.\",\"weak_password\":{\"reasons\":[\"length\"]}}"}}},
+    "expect": {"catalog": "auth.weak_password", "mentions": ["weak_password", "password rules"], "must_not": ["lower the minimum"]},
+    "spike_case": "auth_weak_password"
+  },
+  {
+    "name": "js/map_not_function",
+    "route": "/projects",
+    "users": 5, "events": 12,
+    "event": {"exception": {"values": [{"type": "TypeError", "value": "hg.items.map is not a function"}]}, "request": {"url": "https://app.example.com/projects"}},
+    "expect": {"catalog": "js.not_a_function", "mentions": ["Find where `items.map`", "[]", "list"], "must_not": ["`hg.items"]},
+    "spike_case": "js_map"
+  },
+  {
+    "name": "js/not_defined",
+    "route": "/pricing",
+    "users": 6, "events": 6,
+    "event": {"exception": {"values": [{"type": "ReferenceError", "value": "formatPrice is not defined"}]}, "request": {"url": "https://app.example.com/pricing"}},
+    "expect": {"catalog": "js.not_defined", "mentions": ["formatPrice", "import"], "must_not": []},
+    "spike_case": ""
+  },
+  {
+    "name": "js/chunk_load",
+    "route": "/settings",
+    "users": 4, "events": 4,
+    "event": {"exception": {"values": [{"type": "TypeError", "value": "Failed to fetch dynamically imported module: https://app.example.com/assets/Settings-BzQ1x9aa.js"}]}, "request": {"url": "https://app.example.com/settings"}},
+    "expect": {"catalog": "js.chunk_load", "mentions": ["reload", "sessionStorage", "once"], "must_not": []},
+    "spike_case": ""
+  },
+  {
+    "name": "js/json_parse",
+    "route": "/reports",
+    "users": 2, "events": 3,
+    "event": {"exception": {"values": [{"type": "SyntaxError", "value": "Unexpected token '<', \"<!doctype \"... is not valid JSON"}]}, "request": {"url": "https://app.example.com/reports"}},
+    "expect": {"catalog": "js.json_parse", "mentions": ["response.ok", ".json()", "URL"], "must_not": []},
+    "spike_case": "js_json"
+  },
+  {
+    "name": "js/json_parse_with_response",
+    "route": "/reports",
+    "users": 3, "events": 5,
+    "event": {"exception": {"values": [{"type": "SyntaxError", "value": "Unexpected token '<', \"<!doctype \"... is not valid JSON"}]}, "request": {"url": "https://app.example.com/reports"},
+      "contexts": {"fix_json": {"url": "https://app.example.com/api/report.json?month=", "status": 200, "content_type": "text/html; charset=utf-8"}}},
+    "expect": {"catalog": "js.json_parse", "mentions": ["/api/report.json", "text/html", "response.ok", "right URL"], "must_not": []},
+    "spike_case": "js_json"
+  },
+  {
+    "name": "net/edge_function_500",
+    "route": "/invoices",
+    "users": 2, "events": 5,
+    "event": {"exception": {"values": [{"type": "HTTPError", "value": "POST /functions/v1/send-invoice 500"}]}, "request": {"url": "https://app.example.com/invoices"},
+      "contexts": {"fix_http": {"method": "POST", "url": "https://abc.supabase.co/functions/v1/send-invoice", "status": 500,
+        "body": "{\"error\":\"Cannot read properties of undefined (reading 'email')\"}"}}},
+    "expect": {"catalog": "", "mentions": ["send-invoice", "500", "one sentence", "email"], "must_not": []},
+    "spike_case": ""
+  },
+  {
+    "name": "auth/weak_password_via_local_proxy",
+    "route": "/signup",
+    "users": 1, "events": 1,
+    "event": {"exception": {"values": [{"type": "HTTPError", "value": "POST /auth/v1/signup 422"}]}, "request": {"url": "http://localhost:4173/signup"},
+      "contexts": {"fix_http": {"method": "POST", "url": "http://localhost:4173/auth/v1/signup", "status": 422,
+        "body": "{\"code\":\"weak_password\",\"message\":\"Password should be at least 6 characters.\",\"weak_password\":{\"reasons\":[\"length\"]}}"}}},
+    "expect": {"catalog": "auth.weak_password", "mentions": ["weak_password"], "must_not": ["local address"]},
+    "spike_case": ""
+  },
+  {
+    "name": "js/safari_null",
+    "route": "/profile",
+    "users": 3, "events": 3,
+    "event": {"exception": {"values": [{"type": "TypeError", "value": "undefined is not an object (evaluating 'user.profile')"}]}, "request": {"url": "https://app.example.com/profile"}},
+    "expect": {"catalog": "js.null_property", "mentions": ["user.profile"], "must_not": []},
+    "spike_case": ""
+  }
+]

@@ -1,0 +1,28 @@
+{{define "content"}}
+<h1>Fix Assistant</h1>
+{{with .Data}}
+{{if .Invalid}}
+  <p class="flash error">This link is invalid or has expired.</p>
+  <p><a href="/login">Sign in</a> and answer on the issue page instead.</p>
+{{else if .Done}}
+  <div class="card">
+    <p><b>Thanks, noted.</b></p>
+    {{if eq .Outcome "worked"}}
+      <p class="muted">We marked “{{code .Title}}” as fixed. If it happens again on a newer version of your app, we'll reopen it and tell you.</p>
+    {{else}}
+      <p class="muted">We reopened “{{code .Title}}” and wrote a new prompt that tells your AI agent the first fix didn't work.</p>
+    {{end}}
+  </div>
+  <p><a href="{{.IssueURL}}">Open the issue</a> (you may need to sign in)</p>
+{{else}}
+  <form method="post" class="card">
+    <input type="hidden" name="e" value="{{.E}}">
+    <input type="hidden" name="s" value="{{.S}}">
+    <p>“{{code .Title}}”</p>
+    <p>{{if eq .Outcome "worked"}}Did the fix work?{{else}}Did the fix not work?{{end}}</p>
+    <p><button type="submit">{{if eq .Outcome "worked"}}Yes, it worked{{else}}No, it's still broken{{end}}</button></p>
+  </form>
+  <p class="small muted">One more click so email security scanners can't answer for you.</p>
+{{end}}
+{{end}}
+{{end}}

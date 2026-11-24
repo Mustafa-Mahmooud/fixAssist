@@ -1,0 +1,67 @@
+{{define "content"}}
+<h1>Admin</h1>
+<p class="muted">Staff only. <a href="/admin/github">GitHub App</a>. Raw issue data: <code>/admin/issues/&lt;id&gt;</code>. Prometheus metrics: <code>/metrics</code> (localhost or bearer token).</p>
+
+<h2>Fix prompts: did they work?</h2>
+<p><b>{{.Data.Overall}}</b> <span class="muted small">(MVP gate: about half marked worked, explicit + implicit answers)</span></p>
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>Origin</th><th>Catalog entry</th><th class="num">Suggestions</th><th class="num">Worked</th><th class="num">Didn't</th><th class="num">Rate</th><th class="num">AI cost</th></tr></thead>
+    <tbody>
+    {{range .Data.Outcomes}}
+      <tr><td>{{.Origin}}</td><td><code>{{or .CatalogKey "—"}}</code></td><td class="num">{{.Suggestions}}</td><td class="num">{{.Worked}}</td><td class="num">{{.Failed}}</td><td class="num">{{.Rate}}</td><td class="num">${{printf "%.4f" .CostUsd}}</td></tr>
+    {{else}}<tr><td colspan="7" class="muted">No suggestions yet.</td></tr>{{end}}
+    </tbody>
+  </table>
+</div>
+
+<h2>Quarantined fix patterns</h2>
+<p class="muted small">A pattern is quarantined after 5 or more answers with under 30% worked; new issues with it get a diagnose-in-your-code prompt instead. Rewrite the catalog entry, then reset.</p>
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>Pattern</th><th>Catalog entry</th><th class="num">Worked / didn't</th><th class="num">Since</th><th></th></tr></thead>
+    <tbody>
+    {{range .Data.Quarantined}}
+      <tr><td><code>{{.Signature}}</code></td><td><code>{{or .CatalogKey.String "agent"}}</code></td><td class="num">{{.Worked}} / {{.Failed}}</td><td class="num">{{ago .QuarantinedAt.Time}}</td>
+        <td class="num"><form method="post" action="/admin/kb/{{.ID}}/reset"><input type="hidden" name="csrf" value="{{$.Session.CSRF}}"><button class="link">Reset</button></form></td></tr>
+    {{else}}<tr><td colspan="5" class="muted">None. Every fix pattern is doing all right.</td></tr>{{end}}
+    </tbody>
+  </table>
+</div>
+
+<h2>Ingest</h2>
+<p class="muted small">Responses since this server started:
+  {{range .Data.Codes}}<code>{{.Code}}</code> {{.Count}} &nbsp;{{else}}none yet{{end}}
+  (429 = rate or monthly quota limited)</p>
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>Project</th><th>Org</th><th class="num">Events 1 h</th><th class="num">Events 24 h</th><th class="num">Issues</th><th class="num">Suggestions</th><th class="num">Worked / didn't</th><th class="num">AI cost</th></tr></thead>
+    <tbody>
+    {{range .Data.Projects}}
+      <tr><td>{{.Name}} <span class="muted small">#{{.ID}}</span></td><td>{{.OrgName}}</td><td class="num">{{.Events1h}}</td><td class="num">{{.Events24h}}</td><td class="num">{{.Issues}}</td><td class="num">{{.Suggestions}}</td><td class="num">{{.Worked}} / {{.Failed}}</td><td class="num">${{printf "%.4f" .AiCostUsd}}</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+
+<h2>Queues</h2>
+<div class="grid">
+  <div class="card table-wrap">
+    <table>
+      <thead><tr><th>Queue</th><th>State</th><th class="num">Jobs</th></tr></thead>
+      <tbody>
+      {{range .Data.Queues}}<tr><td>{{.Queue}}</td><td>{{.State}}</td><td class="num">{{.Jobs}}</td></tr>{{else}}<tr><td colspan="3" class="muted">All queues empty.</td></tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr><th>Queue</th><th class="num">Oldest waiting job</th></tr></thead>
+      <tbody>
+      {{range .Data.Lags}}<tr><td>{{.Queue}}</td><td class="num">{{printf "%.0f" .LagSeconds}} s</td></tr>{{else}}<tr><td colspan="2" class="muted">Nothing waiting.</td></tr>{{end}}
+      </tbody>
+    </table>
+    <p class="muted small">FDR: split ingest onto its own box when grouping lag stays over 60 s.</p>
+  </div>
+</div>
+{{end}}
