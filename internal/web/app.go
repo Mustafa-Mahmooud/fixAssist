@@ -57,6 +57,8 @@ func (a *App) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /login", a.loginPage)
 	mux.HandleFunc("POST /login", a.loginSubmit)
 	mux.HandleFunc("GET /auth/magic", a.magicPage)
+	mux.HandleFunc("GET /auth/github", a.githubSignInStart)
+	mux.HandleFunc("GET /auth/github/callback", a.githubSignInCallback)
 	mux.HandleFunc("POST /auth/magic", a.magicSubmit)
 	mux.Handle("POST /logout", a.signedIn(a.logout))
 	mux.Handle("GET /{$}", a.signedIn(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/projects", http.StatusSeeOther) }))
@@ -153,17 +155,18 @@ type loginData struct {
 	Email    string
 	Sent     bool
 	EmailOff bool
+	GitHub   bool // "Sign in with GitHub" is available
 }
 
 func (a *App) loginPage(w http.ResponseWriter, r *http.Request) {
 	securityHeaders(w)
-	a.render(w, 200, "login", page{Title: "Sign in", Data: loginData{EmailOff: a.EmailOff}})
+	a.render(w, 200, "login", page{Title: "Sign in", Data: loginData{GitHub: a.GitHub != nil, EmailOff: a.EmailOff}})
 }
 
 func (a *App) loginSubmit(w http.ResponseWriter, r *http.Request) {
 	securityHeaders(w)
 	if a.EmailOff {
-		a.render(w, http.StatusServiceUnavailable, "login", page{Title: "Sign in", Data: loginData{EmailOff: true}})
+		a.render(w, http.StatusServiceUnavailable, "login", page{Title: "Sign in", Data: loginData{GitHub: a.GitHub != nil, EmailOff: true}})
 		return
 	}
 	email := r.PostFormValue("email")
@@ -174,12 +177,12 @@ func (a *App) loginSubmit(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, auth.ErrRateLimited) {
 			status = http.StatusTooManyRequests
 		}
-		a.render(w, status, "login", page{Title: "Sign in", Error: err.Error(), Data: loginData{Email: email}})
+		a.render(w, status, "login", page{Title: "Sign in", Error: err.Error(), Data: loginData{GitHub: a.GitHub != nil, Email: email}})
 	case err != nil:
 		a.Log.Error("request link", "err", err)
-		a.render(w, 500, "login", page{Title: "Sign in", Error: "We couldn't send the email. Please try again.", Data: loginData{Email: email}})
+		a.render(w, 500, "login", page{Title: "Sign in", Error: "We couldn't send the email. Please try again.", Data: loginData{GitHub: a.GitHub != nil, Email: email}})
 	default:
-		a.render(w, 200, "login", page{Title: "Check your email", Data: loginData{Email: email, Sent: true}})
+		a.render(w, 200, "login", page{Title: "Check your email", Data: loginData{GitHub: a.GitHub != nil, Email: email, Sent: true}})
 	}
 }
 
@@ -201,16 +204,11 @@ func (a *App) magicSubmit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", 500)
 		return
 	}
-	cookie, err := a.Auth.CreateSession(r.Context(), userID)
-	if err != nil {
+	if err := a.startSession(w, r, userID); err != nil {
 		a.Log.Error("create session", "err", err)
 		http.Error(w, "internal error", 500)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name: sessionCookie, Value: cookie, Path: "/", HttpOnly: true, Secure: a.secureCookies(),
-		SameSite: http.SameSiteLaxMode, MaxAge: int(auth.SessionTTL.Seconds()),
-	})
 	http.Redirect(w, r, "/projects", http.StatusSeeOther)
 }
 

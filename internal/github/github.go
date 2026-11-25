@@ -195,31 +195,16 @@ func (a *App) InstallURL(state string) string {
 // redirect and checks that this GitHub user can access the installation.
 // Without this, anyone could attach someone else's installation_id.
 func (a *App) UserCanAccess(ctx context.Context, code string, installationID int64) (bool, error) {
-	form := url.Values{"client_id": {a.ClientID}, "client_secret": {a.ClientSecret}, "code": {code}}
-	req, _ := http.NewRequestWithContext(ctx, "POST", a.web()+"/login/oauth/access_token", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-	resp, err := a.client().Do(req)
+	token, err := a.userToken(ctx, code, "")
 	if err != nil {
 		return false, err
-	}
-	defer resp.Body.Close()
-	var tok struct {
-		AccessToken string `json:"access_token"`
-		Error       string `json:"error"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&tok); err != nil {
-		return false, err
-	}
-	if tok.AccessToken == "" {
-		return false, fmt.Errorf("github oauth: %s", tok.Error)
 	}
 	var out struct {
 		Installations []struct {
 			ID int64 `json:"id"`
 		} `json:"installations"`
 	}
-	if err := a.do(ctx, "GET", a.api()+"/user/installations?per_page=100", "Bearer "+tok.AccessToken, nil, &out); err != nil {
+	if err := a.do(ctx, "GET", a.api()+"/user/installations?per_page=100", "Bearer "+token, nil, &out); err != nil {
 		return false, err
 	}
 	for _, in := range out.Installations {
@@ -228,6 +213,89 @@ func (a *App) UserCanAccess(ctx context.Context, code string, installationID int
 		}
 	}
 	return false, nil
+}
+
+// userToken exchanges an OAuth code for a user access token. redirectURI
+// must repeat the one used in the authorize request, when there was one.
+func (a *App) userToken(ctx context.Context, code, redirectURI string) (string, error) {
+	form := url.Values{"client_id": {a.ClientID}, "client_secret": {a.ClientSecret}, "code": {code}}
+	if redirectURI != "" {
+		form.Set("redirect_uri", redirectURI)
+	}
+	req, _ := http.NewRequestWithContext(ctx, "POST", a.web()+"/login/oauth/access_token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	resp, err := a.client().Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var tok struct {
+		AccessToken string `json:"access_token"`
+		Error       string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tok); err != nil {
+		return "", err
+	}
+	if tok.AccessToken == "" {
+		return "", fmt.Errorf("github oauth: %s", tok.Error)
+	}
+	return tok.AccessToken, nil
+}
+
+// SignInURL starts "Sign in with GitHub" (the app's user authorization).
+func (a *App) SignInURL(redirectURI, state string) string {
+	return a.web() + "/login/oauth/authorize?" + url.Values{
+		"client_id": {a.ClientID}, "redirect_uri": {redirectURI}, "state": {state}, "allow_signup": {"true"},
+	}.Encode()
+}
+
+// User is who signed in with GitHub.
+type User struct {
+	ID    int64
+	Login string
+	Email string // primary and verified
+}
+
+// ErrNoVerifiedEmail: the GitHub account has no verified email to sign in with.
+var ErrNoVerifiedEmail = errors.New("this GitHub account has no verified email address")
+
+// SignIn finishes "Sign in with GitHub": the user's id, login and verified
+// primary email (needs the app's read-only "Email addresses" permission).
+// The user token is used once here and never stored.
+func (a *App) SignIn(ctx context.Context, code, redirectURI string) (User, error) {
+	token, err := a.userToken(ctx, code, redirectURI)
+	if err != nil {
+		return User{}, err
+	}
+	var u struct {
+		ID    int64  `json:"id"`
+		Login string `json:"login"`
+	}
+	if err := a.do(ctx, "GET", a.api()+"/user", "Bearer "+token, nil, &u); err != nil {
+		return User{}, err
+	}
+	if u.ID == 0 {
+		return User{}, errors.New("github: no user id")
+	}
+	var emails []struct {
+		Email    string `json:"email"`
+		Primary  bool   `json:"primary"`
+		Verified bool   `json:"verified"`
+	}
+	if err := a.do(ctx, "GET", a.api()+"/user/emails", "Bearer "+token, nil, &emails); err != nil {
+		return User{}, err
+	}
+	out := User{ID: u.ID, Login: u.Login}
+	for _, e := range emails {
+		if e.Verified && (e.Primary || out.Email == "") && !strings.HasSuffix(strings.ToLower(e.Email), "@users.noreply.github.com") {
+			out.Email = e.Email
+		}
+	}
+	if out.Email == "" {
+		return User{}, ErrNoVerifiedEmail
+	}
+	return out, nil
 }
 
 // Repos lists the repositories an installation can read.
@@ -284,13 +352,15 @@ func Manifest(baseURL string) []byte {
 		"name":                     fmt.Sprintf("Fix Assistant %x", sha256.Sum256([]byte(host)))[:20],
 		"url":                      base,
 		"redirect_url":             base + "/admin/github/callback",
-		"callback_urls":            []string{base + "/github/setup"},
+		"callback_urls":            []string{base + "/github/setup", base + "/auth/github/callback"},
 		"setup_url":                base + "/github/setup",
 		"request_oauth_on_install": true,
 		"public":                   true,
 		"hook_attributes":          map[string]any{"url": base + "/github/webhook", "active": false},
-		"default_permissions":      map[string]string{"contents": "read", "metadata": "read"},
-		"default_events":           []string{},
+		// Read-only: repository contents (code context), and the user's email
+		// addresses for "Sign in with GitHub".
+		"default_permissions": map[string]string{"contents": "read", "metadata": "read", "email_addresses": "read"},
+		"default_events":      []string{},
 	}
 	b, _ := json.Marshal(m)
 	return b

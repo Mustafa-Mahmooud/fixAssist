@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -87,7 +88,15 @@ func TestManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	perms := m["default_permissions"].(map[string]any)
-	if perms["contents"] != "read" || len(perms) != 2 || m["request_oauth_on_install"] != true || m["setup_url"] != "https://fix.example.com/github/setup" {
+	for name, level := range perms {
+		if level != "read" {
+			t.Errorf("permission %s = %v: the app must only ever read", name, level)
+		}
+	}
+	if !strings.Contains(fmt.Sprint(m["callback_urls"]), "https://fix.example.com/auth/github/callback") {
+		t.Errorf("callback_urls = %v, want the sign-in callback", m["callback_urls"])
+	}
+	if perms["contents"] != "read" || perms["email_addresses"] != "read" || len(perms) != 3 || m["request_oauth_on_install"] != true || m["setup_url"] != "https://fix.example.com/github/setup" {
 		t.Errorf("manifest = %v", m)
 	}
 }

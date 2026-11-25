@@ -175,3 +175,7 @@ svg.chart text { fill: var(--muted); font-size: 11px; }
   border-left: 3px solid var(--accent); background: var(--surface); border-radius: 0 var(--radius) var(--radius) 0; }
 .tip p { margin: 0; }
 .tip form { flex: none; }
+
+/* Sign in with GitHub */
+a.button.github { display: block; text-align: center; padding: 0.7rem 1rem; font-weight: 600; }
+.or { text-align: center; margin: 0.5rem 0; }

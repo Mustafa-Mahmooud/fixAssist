@@ -1,23 +1,32 @@
 {{define "content"}}
 <h1>Fix Assistant</h1>
-{{if .Data.EmailOff}}
-  <div class="card">
-    <p><b>Sign-in by email isn't switched on yet.</b></p>
-    <p class="muted">Ask the Fix Assistant team for your personal sign-in link. It works once and is valid for 3 days.</p>
-  </div>
-{{else if .Data.Sent}}
+{{if .Data.Sent}}
   <div class="card">
     <p><b>Check your email.</b></p>
     <p class="muted">We sent a sign-in link to {{.Data.Email}}. It works once and expires in 15 minutes.</p>
   </div>
   <p class="small"><a href="/login">Use a different email</a></p>
 {{else}}
-  <p class="muted">Plain-language fixes for the errors in your app. Sign in or create an account with your email.</p>
+  <p class="muted">Plain-language fixes for the errors in your app. Sign in, or create an account, in one step.</p>
   {{if .Error}}<p class="flash error">{{.Error}}</p>{{end}}
-  <form method="post" action="/login" class="card">
-    <label for="email">Email</label>
-    <input id="email" type="email" name="email" value="{{.Data.Email}}" autocomplete="email" required autofocus>
-    <p><button type="submit">Email me a sign-in link</button></p>
-  </form>
+  {{if .Data.GitHub}}
+  <div class="card">
+    <a class="button github" href="/auth/github">Sign in with GitHub</a>
+    <p class="muted small">We only read your GitHub name and verified email. No access to your code unless you connect a repository later.</p>
+  </div>
+  {{end}}
+  {{if .Data.EmailOff}}
+    <div class="card">
+      <p><b>Sign-in by email isn't switched on yet.</b></p>
+      <p class="muted">{{if .Data.GitHub}}Use GitHub above, or ask{{else}}Ask{{end}} the Fix Assistant team for your personal sign-in link. It works once and is valid for 3 days.</p>
+    </div>
+  {{else}}
+    {{if .Data.GitHub}}<p class="muted small or">or with your email</p>{{end}}
+    <form method="post" action="/login" class="card">
+      <label for="email">Email</label>
+      <input id="email" type="email" name="email" value="{{.Data.Email}}" autocomplete="email" required{{if not .Data.GitHub}} autofocus{{end}}>
+      <p><button type="submit">Email me a sign-in link</button></p>
+    </form>
+  {{end}}
 {{end}}
 {{end}}

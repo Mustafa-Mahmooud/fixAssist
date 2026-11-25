@@ -116,3 +116,16 @@ update projects set onboarding_dismissed_at = now() where id = $1;
 
 -- name: SetTipsHidden :exec
 update users set tips_hidden = @hidden where id = @id;
+
+-- Sign in with GitHub --------------------------------------------------------
+
+-- name: GetUserByGitHubID :one
+select id, email from users where github_id = $1;
+
+-- name: LinkGitHub :execrows
+-- Links an existing account (found by verified email) to its GitHub user,
+-- only if it isn't linked to another one.
+update users set github_id = @github_id where id = @id and (github_id is null or github_id = @github_id);
+
+-- name: CreateUserWithGitHub :one
+insert into users (email, github_id) values (@email, @github_id) returning id, email;

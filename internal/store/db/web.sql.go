@@ -60,6 +60,27 @@ func (q *Queries) CreateUser(ctx context.Context, email string) (CreateUserRow, 
 	return i, err
 }
 
+const createUserWithGitHub = `-- name: CreateUserWithGitHub :one
+insert into users (email, github_id) values ($1, $2) returning id, email
+`
+
+type CreateUserWithGitHubParams struct {
+	Email    string
+	GithubID pgtype.Int8
+}
+
+type CreateUserWithGitHubRow struct {
+	ID    int64
+	Email string
+}
+
+func (q *Queries) CreateUserWithGitHub(ctx context.Context, arg CreateUserWithGitHubParams) (CreateUserWithGitHubRow, error) {
+	row := q.db.QueryRow(ctx, createUserWithGitHub, arg.Email, arg.GithubID)
+	var i CreateUserWithGitHubRow
+	err := row.Scan(&i.ID, &i.Email)
+	return i, err
+}
+
 const createWebSession = `-- name: CreateWebSession :exec
 insert into web_sessions (id_hash, user_id, csrf_token, expires_at) values ($1, $2, $3, $4)
 `
@@ -224,6 +245,24 @@ func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (GetUserByEm
 	return i, err
 }
 
+const getUserByGitHubID = `-- name: GetUserByGitHubID :one
+
+select id, email from users where github_id = $1
+`
+
+type GetUserByGitHubIDRow struct {
+	ID    int64
+	Email string
+}
+
+// Sign in with GitHub --------------------------------------------------------
+func (q *Queries) GetUserByGitHubID(ctx context.Context, githubID pgtype.Int8) (GetUserByGitHubIDRow, error) {
+	row := q.db.QueryRow(ctx, getUserByGitHubID, githubID)
+	var i GetUserByGitHubIDRow
+	err := row.Scan(&i.ID, &i.Email)
+	return i, err
+}
+
 const getWebSession = `-- name: GetWebSession :one
 select s.user_id, s.csrf_token, s.expires_at, u.email, u.tips_hidden
 from web_sessions s join users u on u.id = s.user_id
@@ -342,6 +381,25 @@ func (q *Queries) IssueSamples(ctx context.Context, arg IssueSamplesParams) ([]I
 		return nil, err
 	}
 	return items, nil
+}
+
+const linkGitHub = `-- name: LinkGitHub :execrows
+update users set github_id = $1 where id = $2 and (github_id is null or github_id = $1)
+`
+
+type LinkGitHubParams struct {
+	GithubID pgtype.Int8
+	ID       int64
+}
+
+// Links an existing account (found by verified email) to its GitHub user,
+// only if it isn't linked to another one.
+func (q *Queries) LinkGitHub(ctx context.Context, arg LinkGitHubParams) (int64, error) {
+	result, err := q.db.Exec(ctx, linkGitHub, arg.GithubID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const listIssues = `-- name: ListIssues :many

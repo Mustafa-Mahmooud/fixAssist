@@ -180,6 +180,54 @@ func (s *Service) UseLink(ctx context.Context, token string) (int64, error) {
 	return userID, err
 }
 
+// ErrGitHubConflict: the email's account is already linked to another
+// GitHub user, so this one can't take it over.
+var ErrGitHubConflict = errors.New("this email's account is linked to a different GitHub account; sign in with your email link instead")
+
+// SignInGitHub returns the account for a GitHub user, by GitHub id first,
+// then by the verified email GitHub returned (linking the two), else a new
+// account and org, as a first email sign-in would create.
+func (s *Service) SignInGitHub(ctx context.Context, githubID int64, verifiedEmail string) (int64, error) {
+	email := strings.ToLower(strings.TrimSpace(verifiedEmail))
+	if githubID == 0 || !strings.Contains(email, "@") {
+		return 0, errors.New("github sign-in: missing id or email")
+	}
+	var userID int64
+	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		q := db.New(tx)
+		if u, err := q.GetUserByGitHubID(ctx, pgtype.Int8{Int64: githubID, Valid: true}); err == nil {
+			userID = u.ID
+			return nil
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if u, err := q.GetUserByEmail(ctx, email); err == nil {
+			n, err := q.LinkGitHub(ctx, db.LinkGitHubParams{ID: u.ID, GithubID: pgtype.Int8{Int64: githubID, Valid: true}})
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				return ErrGitHubConflict
+			}
+			userID = u.ID
+			return nil
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		nu, err := q.CreateUserWithGitHub(ctx, db.CreateUserWithGitHubParams{Email: email, GithubID: pgtype.Int8{Int64: githubID, Valid: true}})
+		if err != nil {
+			return err
+		}
+		orgID, err := q.CreateOrg(ctx, email+"'s apps")
+		if err != nil {
+			return err
+		}
+		userID = nu.ID
+		return q.CreateMembership(ctx, db.CreateMembershipParams{UserID: nu.ID, OrgID: orgID, Role: "owner"})
+	})
+	return userID, err
+}
+
 // CreateSession returns the cookie value for a new session.
 func (s *Service) CreateSession(ctx context.Context, userID int64) (string, error) {
 	cookie := randomToken()
