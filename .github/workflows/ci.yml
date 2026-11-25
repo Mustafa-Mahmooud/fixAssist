@@ -78,6 +78,76 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # Northflank (docs/deploy-free.md): every push to main that passes the tests
+  # is built and deployed by Northflank, the exact commit that was tested, then
+  # checked on /healthz. Off until the repository variables
+  # NORTHFLANK_PROJECT_ID and NORTHFLANK_SERVICE_ID are set; also needs the
+  # secret NORTHFLANK_API_TOKEN. Turn off the service's own "CI" auto-build in
+  # Northflank, or untested pushes deploy too (and everything builds twice).
+  northflank:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.NORTHFLANK_PROJECT_ID != '' && vars.NORTHFLANK_SERVICE_ID != ''
+    runs-on: ubuntu-24.04
+    environment: production
+    concurrency:
+      group: northflank-production
+      cancel-in-progress: false # never stop a rollout halfway; the next push waits
+    timeout-minutes: 45
+    steps:
+      - name: build and deploy ${{ github.sha }}
+        env:
+          NF_TOKEN: ${{ secrets.NORTHFLANK_API_TOKEN }}
+          NF_SERVICE: https://api.northflank.com/v1/projects/${{ vars.NORTHFLANK_PROJECT_ID }}/services/${{ vars.NORTHFLANK_SERVICE_ID }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "$NF_TOKEN" ]; then echo "::error::The NORTHFLANK_API_TOKEN secret is missing"; exit 1; fi
+          nf() { # nf METHOD PATH [JSON]
+            curl -sS --fail-with-body --retry 3 --retry-all-errors -X "$1" "$NF_SERVICE$2" \
+              -H "Authorization: Bearer $NF_TOKEN" -H "Content-Type: application/json" ${3:+--data "$3"}
+          }
+
+          build=$(nf POST /build "{\"sha\":\"$SHA\"}" | jq -r .data.id)
+          echo "Northflank build $build for $SHA"
+
+          # The build: Northflank clones this commit and builds the Dockerfile.
+          for _ in $(seq 1 180); do # up to 30 minutes
+            b=$(nf GET "/build/$build")
+            if [ "$(jq -r .data.concluded <<<"$b")" = true ]; then break; fi
+            echo "build: $(jq -r .data.status <<<"$b")"
+            sleep 10
+          done
+          if [ "$(jq -r .data.success <<<"$b")" != true ]; then
+            echo "::error::Build $build ended as $(jq -r .data.status <<<"$b"): $(jq -r '.data.message // ""' <<<"$b")"
+            exit 1
+          fi
+          echo "build succeeded"
+
+          # The rollout: wait until the service is running the new build.
+          sleep 20
+          for _ in $(seq 1 60); do # up to 10 minutes
+            s=$(nf GET "")
+            state=$(jq -r .data.status.deployment.status <<<"$s")
+            echo "deployment: $state"
+            case "$state" in
+              COMPLETED) exit 0 ;;
+              FAILED) echo "::error::Deployment failed: $(jq -c .data.status.deployment <<<"$s")"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "::error::The deployment didn't finish within 10 minutes"; exit 1
+
+      - name: health check
+        if: vars.APP_PUBLIC_URL != ''
+        env:
+          URL: ${{ vars.APP_PUBLIC_URL }}
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -fsS --max-time 10 "${URL%/}/healthz"; then echo; echo "live: $URL"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::${URL%/}/healthz didn't answer with 200 within 5 minutes"; exit 1
+
   # The self-hosted VM deploy (deploy/, docs/deploy.md). Off unless the
   # repository variable VM_DEPLOY is "true": Northflank (docs/deploy-free.md)
   # builds from GitHub by itself.

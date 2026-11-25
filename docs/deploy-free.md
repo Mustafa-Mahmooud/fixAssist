@@ -58,9 +58,21 @@ Deploy. The first build takes a few minutes. When it's live:
 2. Open `https://…code.run/login`, enter your email, and click the link that arrives by email.
 3. Create the project, then install the snippet from **Setup**. The address never changes now.
 
-## Updating
+## Updating: automatic deploys from GitHub
 
-Every push to `main` makes Northflank rebuild and redeploy (auto-deploy is on by default). That also refreshes the country database. Migrations run on start.
+Every push to `main` deploys itself, but only after the tests pass. The `northflank` job in `.github/workflows/ci.yml` asks Northflank to build the exact commit that was tested, waits for it to go live, then checks `/healthz`. A deploy that fails shows up as a red job in the repository's **Actions** tab, and the previous version keeps running. Each deploy also refreshes the country database. Migrations run on start.
+
+One-time setup:
+
+1. **Stop Northflank building by itself.** In Northflank, open the service, go to **Build options**, and turn off **CI** (automatic builds on push). Otherwise pushes that fail the tests get deployed too, and everything builds twice.
+2. **Create an API token.** In Northflank, go to **Account settings > API > Tokens**, or **Team settings > API** for a team. Create a token whose role can read and update services in this project. Copy it.
+3. **Find the IDs.** The project ID and the service ID are in the service's URL: `app.northflank.com/…/project/<project-id>/services/<service-id>`.
+4. **Add them to GitHub.** In the repository, go to **Settings > Secrets and variables > Actions**:
+   - under **Secrets**, add `NORTHFLANK_API_TOKEN`, the token from step 2;
+   - under **Variables**, add `NORTHFLANK_PROJECT_ID` and `NORTHFLANK_SERVICE_ID`, plus `APP_PUBLIC_URL`, the `https://….code.run` address, for the health check.
+5. **Deploy.** Push to `main`, or open the latest **ci** run in **Actions** and click **Re-run all jobs**.
+
+Until both variables are set, the job is skipped and CI behaves as before.
 
 ## Limits to keep in mind
 
