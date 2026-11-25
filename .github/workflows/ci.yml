@@ -78,8 +78,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # The self-hosted VM deploy (deploy/, docs/deploy.md). Off unless the
+  # repository variable VM_DEPLOY is "true": Northflank (docs/deploy-free.md)
+  # builds from GitHub by itself.
   deploy:
     needs: image
+    if: vars.VM_DEPLOY == 'true'
     runs-on: ubuntu-24.04
     environment: production
     concurrency: production

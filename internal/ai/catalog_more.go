@@ -29,32 +29,49 @@ func init() {
 	}
 }
 
-// texts is every message we have about the issue, for matching across the
-// browser (page errors, failed requests) and the server.
-func (c *Context) texts() []string {
-	var out []string
+// text is one message about the issue: what is matched (for a failed
+// request: code, message, browser error and body) and what is quoted (the
+// message alone).
+type text struct{ match, quote string }
+
+// sources is every message we have about the issue, across the browser
+// (page errors, failed requests) and the server.
+func (c *Context) sources() []text {
+	var out []text
+	add := func(match, quote string) { out = append(out, text{match, quote}) }
 	for _, j := range c.JS {
-		out = append(out, strings.TrimPrefix(j.Type+": "+j.Message, ": "))
+		t := strings.TrimPrefix(j.Type+": "+j.Message, ": ")
+		add(t, t)
 	}
-	for _, n := range c.Net {
-		out = append(out, strings.TrimSpace(strings.Join([]string{n.Code, n.Message, n.Error, n.Body}, " ")))
+	for i := range c.Net {
+		n := &c.Net[i]
+		add(strings.TrimSpace(strings.Join([]string{n.Code, n.Message, n.Error, n.Body}, " ")), netLine(n))
 	}
 	for _, s := range c.Server {
 		for _, x := range s.Chain {
-			out = append(out, x.Type+": "+x.Message)
+			add(x.Type+": "+x.Message, x.Type+": "+x.Message)
 		}
 	}
 	if c.Message != "" {
-		out = append(out, c.Message)
+		add(c.Message, c.Message)
 	}
 	return out
 }
 
-// found is the first message matching re, trimmed for quoting.
+// texts is what is matched against.
+func (c *Context) texts() []string {
+	var out []string
+	for _, t := range c.sources() {
+		out = append(out, t.match)
+	}
+	return out
+}
+
+// found is the quote of the first message matching re.
 func (c *Context) found(re *regexp.Regexp) string {
-	for _, t := range c.texts() {
-		if re.MatchString(t) {
-			return truncate(strings.Join(strings.Fields(t), " "), 300)
+	for _, t := range c.sources() {
+		if re.MatchString(t.match) {
+			return truncate(strings.Join(strings.Fields(t.quote), " "), 300)
 		}
 	}
 	return ""
@@ -83,10 +100,17 @@ func opening(c *Context, line string) string {
 		if line == "" {
 			line = netLine(n)
 		}
-		if n.Status == 0 {
-			return fmt.Sprintf("On %s, the request %s `%s%s` gets no response (\"%s\").", c.page(), n.Method, n.Host, n.Path, line)
+		said := ""
+		if line != "" {
+			said = fmt.Sprintf(" (\"%s\")", line)
 		}
-		return fmt.Sprintf("On %s, the request %s `%s%s` fails with HTTP %d: \"%s\".", c.page(), n.Method, n.Host, n.Path, n.Status, line)
+		if n.Status == 0 {
+			return fmt.Sprintf("On %s, the request %s `%s%s` gets no response%s.", c.page(), n.Method, n.Host, n.Path, said)
+		}
+		return fmt.Sprintf("On %s, the request %s `%s%s` fails with HTTP %d%s.", c.page(), n.Method, n.Host, n.Path, n.Status, said)
+	}
+	if line == "" {
+		return fmt.Sprintf("On %s, the app fails.", c.page())
 	}
 	return fmt.Sprintf("On %s, the app fails with \"%s\".", c.page(), line)
 }
@@ -113,6 +137,8 @@ func mk(key string, re *regexp.Regexp, extra func(c *Context) bool, b func(c *Co
 			if line == "" {
 				if n := c.net(); n != nil {
 					line = netLine(n)
+				} else if j := c.js(); j != nil {
+					line = strings.TrimPrefix(j.Type+": "+j.Message, ": ")
 				}
 			}
 			s := b(c, line)
@@ -201,6 +227,14 @@ var (
 
 var catalogFirst = []entry{
 	// Noise: errors that look alarming but usually aren't bugs.
+	mk("auth.refresh_token", reRefreshToken, nil, func(c *Context, line string) spec {
+		return spec{sev: "medium", conf: 0.75,
+			title: "Returning visitors get an error because their saved session is no longer valid",
+			what:  fmt.Sprintf("On %s, the app tries to restore an old login (\"%s\") and fails instead of asking the person to sign in again.", c.page(), line),
+			why:   "The saved session was signed out elsewhere, expired, or refreshed by another tab or a second Supabase client at the same moment.",
+			fix:   "Make sure the app creates exactly one Supabase client (imported everywhere from one file). When restoring the session fails with this error, call `supabase.auth.signOut({ scope: 'local' })` to clear the stale session and send the person to the sign-in page, instead of showing an error.",
+			check: "Sign in, then sign out from another browser (or delete the session in Supabase), and reload the app. It should show the sign-in page, not an error."}
+	}),
 	mk("noise.aborted", reAbort, isBrowser, func(c *Context, line string) spec {
 		return spec{sev: "low", conf: 0.7,
 			title: "Requests cancelled on purpose are reported as errors",
@@ -237,6 +271,17 @@ var catalogFirst = []entry{
 			why:   "The Supabase client is created from environment variables that are set on the developer's machine but not in the hosting where the app is published.",
 			fix:   "Find where the Supabase client is created (`createClient(...)`) and which variables it reads (for example `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`). Make sure those exact names are set in the hosting's environment settings for production, then rebuild and publish. If the app was built with Lovable or Bolt, check that the Supabase integration is connected for the published app. Only use the anon (public) key in the browser, never the service-role key.",
 			check: "Open the published app in a private window. It should load data instead of failing on start."}
+	}),
+	mk("sb.bad_key", regexp.MustCompile(`(?i)Invalid API key|No API key found in request`), func(c *Context) bool {
+		n := c.net()
+		return n != nil && strings.Contains(n.Host, "supabase") && (n.Status == 401 || n.Status == 403)
+	}, func(c *Context, line string) spec {
+		return spec{sev: "high", conf: 0.85,
+			title: "Supabase rejects the app's API key",
+			what:  fmt.Sprintf("On %s, every request to Supabase is refused (\"%s\"), so nothing loads or saves.", c.page(), line),
+			why:   "The anon key in the published app is wrong: from another Supabase project, mistyped, or rotated in the dashboard without updating the app.",
+			fix:   "Copy the project's current anon (public) key from Supabase (Project Settings > API) and set it in the production environment variable the client reads (for example `VITE_SUPABASE_ANON_KEY`), together with the matching project URL. Rebuild and publish. Never use the service-role key in the browser.",
+			check: "Open the published app in a private window. Data should load."}
 	}),
 	mk("fb.env_missing", reFirebaseEnv, nil, func(c *Context, line string) spec {
 		return spec{sev: "high", conf: 0.8,
@@ -353,8 +398,10 @@ var (
 var browserMore = []entry{
 	// PostgREST (Supabase database API).
 	{
-		key:   "pg.column_missing",
-		match: func(c *Context) bool { return pgCode(c, "PGRST204") || c.found(reColumnCache) != "" },
+		key: "pg.column_missing",
+		match: func(c *Context) bool {
+			return c.net() != nil && (pgCode(c, "PGRST204") || c.found(reColumnCache) != "")
+		},
 		build: func(c *Context) Suggestion {
 			line := c.found(reColumnCache)
 			col, table := "", tableOr(c, "")
@@ -374,8 +421,10 @@ var browserMore = []entry{
 		},
 	},
 	{
-		key:   "pg.function_missing",
-		match: func(c *Context) bool { return pgCode(c, "PGRST202") || c.found(reFunctionCache) != "" },
+		key: "pg.function_missing",
+		match: func(c *Context) bool {
+			return c.net() != nil && (pgCode(c, "PGRST202") || c.found(reFunctionCache) != "")
+		},
 		build: func(c *Context) Suggestion {
 			line := c.found(reFunctionCache)
 			fn, args := RPCFromPath(c.net().Path), ""
@@ -517,14 +566,6 @@ var browserMore = []entry{
 	}),
 
 	// Supabase Auth.
-	mk("auth.refresh_token", reRefreshToken, nil, func(c *Context, line string) spec {
-		return spec{sev: "medium", conf: 0.75,
-			title: "Returning visitors get an error because their saved session is no longer valid",
-			what:  fmt.Sprintf("On %s, the app tries to restore an old login (\"%s\") and fails instead of asking the person to sign in again.", c.page(), line),
-			why:   "The saved session was signed out elsewhere, expired, or refreshed by another tab or a second Supabase client at the same moment.",
-			fix:   "Make sure the app creates exactly one Supabase client (imported everywhere from one file). When restoring the session fails with this error, call `supabase.auth.signOut({ scope: 'local' })` to clear the stale session and send the person to the sign-in page, instead of showing an error.",
-			check: "Sign in, then sign out from another browser (or delete the session in Supabase), and reload the app. It should show the sign-in page, not an error."}
-	}),
 	mk("auth.link_expired", reOTPExpired, nil, func(c *Context, line string) spec {
 		return spec{sev: "high", conf: 0.75,
 			title: "Email sign-in or confirmation links don't work",
@@ -534,8 +575,10 @@ var browserMore = []entry{
 			check: "Request a new link and open it in the same browser. It should sign you in. Opening it again should show a friendly \"expired\" message."}
 	}),
 	{
-		key:   "auth.config",
-		match: func(c *Context) bool { return authCode(c, "signup_disabled", "email_provider_disabled", "provider_disabled", "phone_provider_disabled", "anonymous_provider_disabled") },
+		key: "auth.config",
+		match: func(c *Context) bool {
+			return authCode(c, "signup_disabled", "email_provider_disabled", "provider_disabled", "phone_provider_disabled", "anonymous_provider_disabled")
+		},
 		build: func(c *Context) Suggestion {
 			n := c.net()
 			return Suggestion{
@@ -878,30 +921,6 @@ var serverFirst = []entry{
 			fix:   "Find which column is NULL for the failing rows (compare the model with the table). Either make that property nullable in the model (`string?`, `int?`, `DateTime?`) and handle the empty case where it's used, or fill the NULLs with a default and make the column NOT NULL in a migration.",
 			check: fmt.Sprintf("Open %s for records that have empty fields. They should load.", c.page())}
 	}),
-	mk("srv.file_missing", reFileMissing, isServer, func(c *Context, line string) spec {
-		return spec{sev: "medium", conf: 0.7,
-			title: "The server can't find a file it needs",
-			what:  fmt.Sprintf("On %s, the server tries to open a file that isn't there (\"%s\").", c.page(), line),
-			why:   "The path is relative to a different working directory in production, the file isn't included in the deployed build, or it was written to local disk on another instance.",
-			fix:   "Find the file path in the code at this point. Build it from the app's own directory (for example `path.join(__dirname, ...)`, `Path.Combine(AppContext.BaseDirectory, ...)`, `Path(__file__).parent`) instead of the working directory, and make sure the file is included in the deployment. Files created at runtime (uploads, generated reports) belong in object storage, not on the server's disk.",
-			check: fmt.Sprintf("After redeploying, repeat what failed on %s. It should work.", c.page())}
-	}),
-	mk("srv.readonly_fs", reReadOnlyFS, isServer, func(c *Context, line string) spec {
-		return spec{sev: "medium", conf: 0.75,
-			title: "The server isn't allowed to write files where it tries to",
-			what:  fmt.Sprintf("On %s, writing a file fails (\"%s\").", c.page(), line),
-			why:   "Serverless and container hosts make the app's folder read-only (only a temporary folder is writable, and it isn't kept), or the app's user lacks permission.",
-			fix:   "Don't write to the app's folder in production. Store uploads and generated files in object storage (Supabase Storage, S3, Cloudinary) and keep only a reference in the database; use the system temp folder (`os.tmpdir()`, `Path.GetTempPath()`, `tempfile`) for short-lived files.",
-			check: fmt.Sprintf("Repeat the upload or export on %s. It should work.", c.page())}
-	}),
-	mk("srv.out_of_memory", reOOM, nil, func(c *Context, line string) spec {
-		return spec{sev: "high", conf: 0.65,
-			title: "The server runs out of memory",
-			what:  fmt.Sprintf("On %s, the %s runs out of memory and crashes (\"%s\").", c.page(), whereNamed(c), line),
-			why:   "Something loads too much at once: a whole table, a big file read into memory, an unbounded cache or list, or a memory leak that grows over time.",
-			fix:   "Find what this request loads. Use pagination or streaming instead of loading everything (database queries with limits, streaming file uploads and downloads), bound caches, and process big jobs in batches. Only raise the memory limit after that, if the work really needs it.",
-			check: fmt.Sprintf("Repeat the action on %s with large data. Memory should stay stable and the request should complete.", c.page())}
-	}),
 	{
 		key:   "srv.module_missing",
 		match: func(c *Context) bool { return isServer(c) && c.found(reModule) != "" },
@@ -926,6 +945,30 @@ var serverFirst = []entry{
 			}
 		},
 	},
+	mk("srv.file_missing", reFileMissing, isServer, func(c *Context, line string) spec {
+		return spec{sev: "medium", conf: 0.7,
+			title: "The server can't find a file it needs",
+			what:  fmt.Sprintf("On %s, the server tries to open a file that isn't there (\"%s\").", c.page(), line),
+			why:   "The path is relative to a different working directory in production, the file isn't included in the deployed build, or it was written to local disk on another instance.",
+			fix:   "Find the file path in the code at this point. Build it from the app's own directory (for example `path.join(__dirname, ...)`, `Path.Combine(AppContext.BaseDirectory, ...)`, `Path(__file__).parent`) instead of the working directory, and make sure the file is included in the deployment. Files created at runtime (uploads, generated reports) belong in object storage, not on the server's disk.",
+			check: fmt.Sprintf("After redeploying, repeat what failed on %s. It should work.", c.page())}
+	}),
+	mk("srv.readonly_fs", reReadOnlyFS, isServer, func(c *Context, line string) spec {
+		return spec{sev: "medium", conf: 0.75,
+			title: "The server isn't allowed to write files where it tries to",
+			what:  fmt.Sprintf("On %s, writing a file fails (\"%s\").", c.page(), line),
+			why:   "Serverless and container hosts make the app's folder read-only (only a temporary folder is writable, and it isn't kept), or the app's user lacks permission.",
+			fix:   "Don't write to the app's folder in production. Store uploads and generated files in object storage (Supabase Storage, S3, Cloudinary) and keep only a reference in the database; use the system temp folder (`os.tmpdir()`, `Path.GetTempPath()`, `tempfile`) for short-lived files.",
+			check: fmt.Sprintf("Repeat the upload or export on %s. It should work.", c.page())}
+	}),
+	mk("srv.out_of_memory", reOOM, nil, func(c *Context, line string) spec {
+		return spec{sev: "high", conf: 0.65,
+			title: "The server runs out of memory",
+			what:  fmt.Sprintf("On %s, the %s runs out of memory and crashes (\"%s\").", c.page(), whereNamed(c), line),
+			why:   "Something loads too much at once: a whole table, a big file read into memory, an unbounded cache or list, or a memory leak that grows over time.",
+			fix:   "Find what this request loads. Use pagination or streaming instead of loading everything (database queries with limits, streaming file uploads and downloads), bound caches, and process big jobs in batches. Only raise the memory limit after that, if the work really needs it.",
+			check: fmt.Sprintf("Repeat the action on %s with large data. Memory should stay stable and the request should complete.", c.page())}
+	}),
 	mk("srv.bad_json", reJSONBody, isServer, func(c *Context, line string) spec {
 		return spec{sev: "medium", conf: 0.7,
 			title: "The server crashes on a request body that isn't valid JSON",

@@ -14,6 +14,7 @@
 // Config comes from the environment: DATABASE_URL, INGEST_PUBLIC_URL,
 // APP_PUBLIC_URL, APP_SECRET, STAFF_EMAILS, METRICS_TOKEN, GEOIP_DB, TRUST_PROXY,
 // GITHUB_APP_ID + GITHUB_APP_SLUG + GITHUB_CLIENT_ID + GITHUB_CLIENT_SECRET + GITHUB_APP_PRIVATE_KEY,
+// SMTP_HOST + SMTP_PORT + SMTP_USERNAME + SMTP_PASSWORD + EMAIL_FROM, or
 // RESEND_API_KEY + EMAIL_FROM (else dev mailer, EMAIL_DEV_DIR).
 package main
 
@@ -103,6 +104,7 @@ func usage() {
   app admin rotate-key --project ID
   app admin set-quota --project ID --quota N
   app admin login-link --email EMAIL      (when EMAIL_MODE=off)
+  app admin test-email --to EMAIL        (send one test email with the configured sender)
   app spike-capture [--out=DIR] [--addr=127.0.0.1:8787]
   app eval [--agent lovable] [--show NAME|all]   run the golden-set rubric
 env: DATABASE_URL (required except spike-capture), INGEST_PUBLIC_URL (default http://<addr>)
@@ -162,6 +164,11 @@ func serve(ctx context.Context, log *slog.Logger, args []string) error {
 	roles := fs.String("roles", "ingest,web,worker", "comma-separated roles to run")
 	addr := fs.String("addr", defaultAddr, "listen address")
 	_ = fs.Parse(args)
+	// Hosting platforms that assign the port (Northflank, Render, Koyeb, ...)
+	// set PORT; it wins over the image's default --addr.
+	if p := os.Getenv("PORT"); p != "" {
+		*addr = ":" + p
+	}
 
 	enabled := map[string]bool{}
 	for _, r := range strings.Split(*roles, ",") {
@@ -387,6 +394,25 @@ func admin(ctx context.Context, log *slog.Logger, args []string) error {
 			return err
 		}
 		fmt.Printf("sign-in link for %s (single use, valid %s):\n%s\n", *email, auth.AdminLinkTTL, link)
+		return nil
+
+	case "test-email":
+		// Sends one email with the configured sender, to check the settings.
+		fs := flag.NewFlagSet("test-email", flag.ExitOnError)
+		to := fs.String("to", "", "recipient")
+		_ = fs.Parse(args[1:])
+		if *to == "" {
+			return errors.New("--to is required")
+		}
+		log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+		err := alerts.FromEnv(log).Send(ctx, alerts.Message{
+			To: *to, Subject: "Fix Assistant: email is working",
+			Text: "This is a test from Fix Assistant. Sign-in links, alerts and digests will be sent the same way.",
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Println("sent to", *to)
 		return nil
 
 	case "set-quota":

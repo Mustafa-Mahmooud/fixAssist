@@ -227,7 +227,7 @@ var (
 	reNotNullSrv    = regexp.MustCompile(`(?i)violates not-null constraint|cannot insert the value null into column|column '[^']+' cannot be null|not null constraint failed|NotNullViolation|ORA-01400|\bP2011\b`)
 	reForeignKey    = regexp.MustCompile(`(?i)violates foreign key constraint|conflicted with the (?:foreign key|reference) constraint|a foreign key constraint fails|foreign key constraint failed|ForeignKeyViolation|\bP2003\b|ORA-0229[12]`)
 	reMissingSchema = regexp.MustCompile(`(?i)relation "[^"]+" does not exist|column "[^"]+"(?: of relation "[^"]+")? does not exist|invalid object name|invalid column name|table '[^']+' doesn't exist|unknown column|no such table|no such column|UndefinedTable|UndefinedColumn|ORA-00942|ORA-00904|\bP202[12]\b`)
-	reDBUnreachable = regexp.MustCompile(`(?i)ECONNREFUSED|connection refused|could not connect to server|a network-related or instance-specific error|timeout expired|too many connections|remaining connection slots|connection pool|unable to connect to (?:the )?database|SQLSTATE\[HY000\] \[2002\]|communications link failure|server closed the connection unexpectedly|terminating connection due to administrator command|sorry, too many clients`)
+	reDBUnreachable = regexp.MustCompile(`(?i)ECONNREFUSED|connection refused|could not connect to server|a network-related or instance-specific error|timeout expired|too many connections|remaining connection slots|connection pool|unable to connect to (?:the )?database|SQLSTATE\[HY000\] \[2002\]|communications link failure|server closed the connection unexpectedly|terminating connection due to administrator command|sorry, too many clients|ETIMEDOUT \S*:(?:5432|6543|3306|1433|1521|27017|6379)\b`)
 	reNullRef       = regexp.MustCompile(`(?i)NullReferenceException|NullPointerException|object reference not set to an instance|'NoneType' object has no attribute|cannot read propert(?:y|ies) of (?:undefined|null)|undefined method .* for nil|call to a member function .* on null|attempt to read property .* on null|nil pointer dereference`)
 	reBadFormat     = regexp.MustCompile(`(?i)input string was not in a correct format|FormatException|NumberFormatException|for input string:|invalid literal for int\(\)|could not convert string to (?:float|int)|invalid input syntax for type|is not a valid (?:integer|number|date)`)
 
@@ -442,8 +442,6 @@ var serverCatalog = []entry{
 		},
 	},
 }
-
-
 
 // genericServer is the diagnose-and-fix prompt for server errors outside the catalog.
 func genericServer(c *Context) Suggestion {

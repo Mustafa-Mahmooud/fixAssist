@@ -182,7 +182,7 @@
     "event": {"exception": {"values": [{"type": "HTTPError", "value": "POST /functions/v1/send-invoice 500"}]}, "request": {"url": "https://app.example.com/invoices"},
       "contexts": {"fix_http": {"method": "POST", "url": "https://abc.supabase.co/functions/v1/send-invoice", "status": 500,
         "body": "{\"error\":\"Cannot read properties of undefined (reading 'email')\"}"}}},
-    "expect": {"catalog": "", "mentions": ["send-invoice", "500", "one sentence", "email"], "must_not": []},
+    "expect": {"catalog": "sb.edge_error", "mentions": ["send-invoice", "500", "one sentence", "email"], "must_not": []},
     "spike_case": ""
   },
   {

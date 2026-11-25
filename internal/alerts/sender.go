@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -31,10 +32,26 @@ type Sender interface {
 
 // Off reports whether email is switched off (EMAIL_MODE=off): sign-in links
 // are then issued by operators with "app admin login-link".
-func Off() bool { return os.Getenv("EMAIL_MODE") == "off" && os.Getenv("RESEND_API_KEY") == "" }
+func Off() bool {
+	return os.Getenv("EMAIL_MODE") == "off" && os.Getenv("RESEND_API_KEY") == "" && os.Getenv("SMTP_HOST") == ""
+}
 
-// FromEnv picks Resend when RESEND_API_KEY is set, else the dev sender.
+// FromEnv picks SMTP when SMTP_HOST is set, Resend when RESEND_API_KEY is
+// set, else the dev sender.
 func FromEnv(log *slog.Logger) Sender {
+	if host := os.Getenv("SMTP_HOST"); host != "" {
+		port, err := strconv.Atoi(os.Getenv("SMTP_PORT"))
+		if err != nil || port <= 0 {
+			port = 587
+		}
+		user := os.Getenv("SMTP_USERNAME")
+		from := os.Getenv("EMAIL_FROM")
+		if from == "" {
+			from = "Fix Assistant <" + user + ">"
+		}
+		log.Info("email via SMTP", "host", host, "port", port, "from", from)
+		return &SMTP{Host: host, Port: port, Username: user, Password: os.Getenv("SMTP_PASSWORD"), From: from}
+	}
 	if key := os.Getenv("RESEND_API_KEY"); key != "" {
 		from := os.Getenv("EMAIL_FROM")
 		if from == "" {
