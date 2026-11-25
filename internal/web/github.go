@@ -201,7 +201,7 @@ func (a *App) adminGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	conv, err := github.Convert(r.Context(), a.GitHubAPI, r.URL.Query().Get("code"))
 	if err != nil {
 		a.Log.Warn("github manifest conversion", "err", err)
-		http.Error(w, "GitHub didn't create the app; please try again.", http.StatusBadGateway)
+		http.Error(w, "GitHub had an error and didn't send the new app's keys. Open https://github.com/settings/apps: if an app named \"Fix Assistant ...\" is there, delete it (Advanced > Delete), then try again from /admin/github.", http.StatusBadGateway)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")

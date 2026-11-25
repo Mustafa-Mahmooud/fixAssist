@@ -378,9 +378,27 @@ type Conversion struct {
 }
 
 // Convert finishes the manifest flow (no auth needed; the code is single-use).
+// GitHub's own 5xx answers are retried a few times: the code stays valid
+// until a conversion succeeds, and losing it means creating the app again.
 func Convert(ctx context.Context, apiBase, code string) (Conversion, error) {
 	a := &App{APIBase: apiBase}
-	var c Conversion
-	err := a.do(ctx, "POST", a.api()+"/app-manifests/"+url.PathEscape(code)+"/conversions", "", bytes.NewReader(nil), &c)
-	return c, err
+	var err error
+	for attempt := 0; attempt < 4; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return Conversion{}, ctx.Err()
+			case <-time.After(time.Duration(attempt) * 2 * time.Second):
+			}
+		}
+		var c Conversion
+		err = a.do(ctx, "POST", a.api()+"/app-manifests/"+url.PathEscape(code)+"/conversions", "", bytes.NewReader(nil), &c)
+		if err == nil {
+			return c, nil
+		}
+		if !strings.Contains(err.Error(), ": 5") { // only GitHub's server errors are worth retrying
+			break
+		}
+	}
+	return Conversion{}, err
 }

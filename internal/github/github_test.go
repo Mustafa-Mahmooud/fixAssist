@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -11,6 +12,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -128,5 +131,31 @@ func TestSealOpen(t *testing.T) {
 	}
 	if _, err := open([]byte("another-secret-another-secret-00"), sealed); err == nil {
 		t.Error("a different APP_SECRET decrypted it")
+	}
+}
+
+// GitHub's own 5xx errors on the conversion are retried.
+func TestConvertRetriesServerErrors(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.WriteHeader(502)
+			fmt.Fprint(w, `{"message":"Server Error"}`)
+			return
+		}
+		fmt.Fprint(w, `{"id":7,"slug":"fix-assistant-x","client_id":"c","client_secret":"s","pem":"p"}`)
+	}))
+	defer srv.Close()
+	c, err := Convert(context.Background(), srv.URL, "code")
+	if err != nil || c.ID != 7 || calls != 2 {
+		t.Fatalf("Convert = %+v, %v after %d calls", c, err, calls)
+	}
+	// A 4xx (a used or bad code) isn't retried.
+	calls = 0
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(404) }))
+	defer bad.Close()
+	if _, err := Convert(context.Background(), bad.URL, "code"); err == nil || calls != 1 {
+		t.Errorf("4xx: err %v after %d calls", err, calls)
 	}
 }
