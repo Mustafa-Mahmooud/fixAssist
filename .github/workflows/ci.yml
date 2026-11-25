@@ -123,16 +123,14 @@ jobs:
           fi
           echo "build succeeded"
 
-          # The rollout: wait until the service is running the new build.
-          sleep 20
+          # The rollout: wait until the service runs this commit.
           for _ in $(seq 1 60); do # up to 10 minutes
             s=$(nf GET "")
             state=$(jq -r .data.status.deployment.status <<<"$s")
-            echo "deployment: $state"
-            case "$state" in
-              COMPLETED) exit 0 ;;
-              FAILED) echo "::error::Deployment failed: $(jq -c .data.status.deployment <<<"$s")"; exit 1 ;;
-            esac
+            deployed=$(jq -r '.data.deployment.internal.deployedSHA // ""' <<<"$s")
+            echo "deployment: $state, running ${deployed:0:7}"
+            if [ "$state" = FAILED ]; then echo "::error::Deployment failed: $(jq -c .data.status.deployment <<<"$s")"; exit 1; fi
+            if [ "$state" = COMPLETED ] && [ "$deployed" = "$SHA" ]; then exit 0; fi
             sleep 10
           done
           echo "::error::The deployment didn't finish within 10 minutes"; exit 1
