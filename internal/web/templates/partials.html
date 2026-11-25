@@ -14,6 +14,8 @@
     <a class="{{if eq .Title "Setup"}}on{{end}}" href="/projects/{{.Data.Project.ID}}/setup">Setup</a>
   </nav>
 </div>
+{{template "onboarding" .}}
+{{template "page_tip" .}}
 {{end}}
 
 {{define "setup_status"}}
@@ -61,4 +63,70 @@
   <a class="{{if eq .Data.Range.Days 7}}on{{end}}" href="?days=7">Last 7 days</a>
   <a class="{{if eq .Data.Range.Days 30}}on{{end}}" href="?days=30">Last 30 days</a>
 </nav>
+{{end}}
+
+{{define "new_project_form"}}
+<form method="post" action="/projects" class="card">
+  <input type="hidden" name="csrf" value="{{.Session.CSRF}}">
+  <label for="name">App name</label>
+  <input id="name" type="text" name="name" required maxlength="80" placeholder="My booking app">
+  <div class="grid">
+    <div>
+      <label for="agent">Built with</label>
+      <select id="agent" name="agent">
+        {{range .Data.Agents}}<option value="{{.}}">{{agentName .}}</option>{{end}}
+      </select>
+    </div>
+    <div>
+      <label for="backend">Backend</label>
+      <select id="backend" name="backend">
+        <option value="supabase">Supabase</option>
+        <option value="firebase">Firebase</option>
+        <option value="unknown">Other / not sure</option>
+      </select>
+    </div>
+  </div>
+  <label for="domains">Your app's domain <span class="muted small">(optional; events from other sites are rejected)</span></label>
+  <input id="domains" type="text" name="domains" placeholder="myapp.lovable.app">
+  <p><button type="submit">Create and get install steps</button></p>
+</form>
+{{end}}
+
+{{define "onboarding"}}
+{{with .Data.Onboarding}}
+<details class="card onboarding"{{if not .CoreDone}} open{{end}}>
+  <summary>
+    {{if .CoreDone}}<b>You're set up.</b> <span class="muted">A few optional extras</span>
+    {{else}}<b>Getting started</b> <span class="muted">· {{.Done}} of {{.Of}} done</span>{{end}}
+  </summary>
+  <ol class="steps">
+    {{range .Steps}}
+    <li class="{{if .Done}}done{{end}}{{if .Optional}} optional{{end}}">
+      <span class="check" aria-hidden="true">{{if .Done}}✓{{end}}</span>
+      <div>
+        <b>{{.Title}}</b>{{if .Optional}} <span class="muted small">(optional)</span>{{end}}{{if .Done}} <span class="muted small">· done</span>{{end}}
+        {{if not .Done}}
+        <p class="small">{{.Text}}</p>
+        {{with .Code}}<pre class="small">{{.}}</pre>{{end}}
+        {{if .Link}}<p class="small"><a href="{{.Link}}">{{.LinkText}}</a></p>{{end}}
+        {{end}}
+      </div>
+    </li>
+    {{end}}
+  </ol>
+  <form method="post" action="/projects/{{.ProjectID}}/onboarding/dismiss" class="small">
+    <input type="hidden" name="csrf" value="{{$.Session.CSRF}}">
+    <button class="link">{{if .CoreDone}}Hide this list{{else}}I know my way around, hide this list{{end}}</button>
+  </form>
+</details>
+{{end}}
+{{end}}
+
+{{define "page_tip"}}
+{{if and .Session (not .Session.TipsHidden)}}{{with tipFor .Title}}
+<div class="tip">
+  <p class="small"><b>What this page shows:</b> {{.}}</p>
+  <form method="post" action="/settings/tips"><input type="hidden" name="csrf" value="{{$.Session.CSRF}}"><button class="link small">Hide tips</button></form>
+</div>
+{{end}}{{end}}
 {{end}}

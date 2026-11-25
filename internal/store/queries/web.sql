@@ -28,7 +28,7 @@ where m.user_id = $1 order by m.created_at limit 1;
 insert into web_sessions (id_hash, user_id, csrf_token, expires_at) values ($1, $2, $3, $4);
 
 -- name: GetWebSession :one
-select s.user_id, s.csrf_token, s.expires_at, u.email
+select s.user_id, s.csrf_token, s.expires_at, u.email, u.tips_hidden
 from web_sessions s join users u on u.id = s.user_id
 where s.id_hash = $1 and s.expires_at > now();
 
@@ -94,3 +94,25 @@ where issue_id = $1 order by received_at desc limit $2;
 
 -- name: SetIssueStatus :execrows
 update issues set status = $3 where id = $1 and project_id = $2;
+
+-- Onboarding ---------------------------------------------------------------
+
+-- name: ProjectOnboarding :one
+-- Progress is read from the data, so it can't drift from what happened.
+select
+  (p.onboarding_dismissed_at is not null)::boolean as dismissed,
+  (exists (select 1 from pageviews v where v.project_id = p.id)
+   or exists (select 1 from events e where e.project_id = p.id))::boolean as connected,
+  exists (select 1 from issues i where i.project_id = p.id)::boolean as has_issue,
+  exists (select 1 from fix_suggestions f join issues i on i.id = f.issue_id where i.project_id = p.id)::boolean as explained,
+  exists (select 1 from events e where e.project_id = p.id and e.kind = 'server')::boolean as server_errors,
+  exists (select 1 from project_github g where g.project_id = p.id and g.repo_full_name is not null)::boolean as code_connected,
+  exists (select 1 from agent_tokens t where t.project_id = p.id and t.revoked_at is null)::boolean as agent_connected,
+  coalesce((select i.id from issues i where i.project_id = p.id order by i.impact_score desc, i.last_seen_at desc limit 1), 0)::bigint as first_issue_id
+from projects p where p.id = $1;
+
+-- name: DismissOnboarding :exec
+update projects set onboarding_dismissed_at = now() where id = $1;
+
+-- name: SetTipsHidden :exec
+update users set tips_hidden = @hidden where id = @id;

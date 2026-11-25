@@ -65,6 +65,8 @@ func (a *App) Register(mux *http.ServeMux) {
 	mux.Handle("GET /projects/{id}/setup", a.signedIn(a.setupPage))
 	mux.Handle("GET /projects/{id}/setup/status", a.signedIn(a.setupStatus))
 	mux.Handle("POST /projects/{id}/agent-tokens", a.signedIn(a.createAgentToken))
+	mux.Handle("POST /projects/{id}/onboarding/dismiss", a.signedIn(a.dismissOnboarding))
+	mux.Handle("POST /settings/tips", a.signedIn(a.setTips))
 	mux.Handle("POST /projects/{id}/agent-tokens/{token}/revoke", a.signedIn(a.revokeAgentToken))
 	mux.Handle("GET /projects/{id}/issues", a.signedIn(a.issuesPage))
 	mux.Handle("GET /projects/{id}/issues/{issue}", a.signedIn(a.issuePage))
@@ -233,7 +235,11 @@ func (a *App) renderProjects(w http.ResponseWriter, r *http.Request, status int,
 		a.fail(w, err)
 		return
 	}
-	a.render(w, status, "projects", page{Title: "Projects", Session: s, Error: errMsg, Data: map[string]any{
+	name, title := "projects", "Projects"
+	if len(list) == 0 {
+		name, title = "welcome", "Welcome" // first visit: what this is, then the first app
+	}
+	a.render(w, status, name, page{Title: title, Session: s, Error: errMsg, Data: map[string]any{
 		"Projects": list, "Agents": projects.Agents,
 	}})
 }

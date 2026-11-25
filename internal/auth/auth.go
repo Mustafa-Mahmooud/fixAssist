@@ -63,6 +63,8 @@ type Session struct {
 	OrgID   int64
 	OrgName string
 	Staff   bool // set by the web layer from STAFF_EMAILS
+	// TipsHidden: the person turned off the "what this page shows" notes.
+	TipsHidden bool
 }
 
 func randomToken() string {
@@ -210,7 +212,7 @@ func (s *Service) LoadSession(ctx context.Context, cookie string) (Session, bool
 	if err != nil {
 		return Session{}, false, fmt.Errorf("user %d has no org: %w", row.UserID, err)
 	}
-	return Session{UserID: row.UserID, Email: row.Email, CSRF: row.CsrfToken, OrgID: org.ID, OrgName: org.Name}, true, nil
+	return Session{UserID: row.UserID, Email: row.Email, CSRF: row.CsrfToken, OrgID: org.ID, OrgName: org.Name, TipsHidden: row.TipsHidden}, true, nil
 }
 
 // EndSession signs a browser out.

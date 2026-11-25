@@ -21,28 +21,8 @@
 </div>
 {{end}}
 <h2>{{if .Data.Projects}}Add another app{{else}}Connect your first app{{end}}</h2>
-<form method="post" action="/projects" class="card">
-  <input type="hidden" name="csrf" value="{{.Session.CSRF}}">
-  <label for="name">App name</label>
-  <input id="name" type="text" name="name" required maxlength="80" placeholder="My booking app">
-  <div class="grid">
-    <div>
-      <label for="agent">Built with</label>
-      <select id="agent" name="agent">
-        {{range .Data.Agents}}<option value="{{.}}">{{agentName .}}</option>{{end}}
-      </select>
-    </div>
-    <div>
-      <label for="backend">Backend</label>
-      <select id="backend" name="backend">
-        <option value="supabase">Supabase</option>
-        <option value="firebase">Firebase</option>
-        <option value="unknown">Other / not sure</option>
-      </select>
-    </div>
-  </div>
-  <label for="domains">Your app's domain <span class="muted small">(optional; events from other sites are rejected)</span></label>
-  <input id="domains" type="text" name="domains" placeholder="myapp.lovable.app">
-  <p><button type="submit">Create and get install steps</button></p>
-</form>
+{{template "new_project_form" .}}
+{{if .Session.TipsHidden}}
+<form method="post" action="/settings/tips" class="muted small"><input type="hidden" name="csrf" value="{{.Session.CSRF}}"><input type="hidden" name="show" value="1">Page tips are hidden. <button class="link">Show them again</button></form>
+{{end}}
 {{end}}

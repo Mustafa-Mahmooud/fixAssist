@@ -1,0 +1,33 @@
+{{define "content"}}
+<div class="welcome">
+  <h1>Welcome to Fix Assistant</h1>
+  <p class="lead">Fix Assistant watches your live app, explains every problem your visitors hit in plain words, and writes the fix message for your AI builder. Then it checks that the fix really worked.</p>
+
+  <h2>How it works</h2>
+  <ol class="how">
+    <li>
+      <b>Connect your app</b>
+      <p class="small muted">Paste one message into the tool you built it with (Lovable, Bolt, Cursor, Replit, v0, ...). It adds a small snippet. No code to write.</p>
+    </li>
+    <li>
+      <b>Fix Assistant watches</b>
+      <p class="small muted">It notices crashes, failed saves and broken requests as people use your app, and counts visits. Personal details are removed, and no cookies are used.</p>
+    </li>
+    <li>
+      <b>It explains the problem</b>
+      <p class="small muted">Each issue says what broke, who is affected and why, with a ready-made fix message to paste into your AI builder. Urgent ones are emailed to you.</p>
+    </li>
+    <li>
+      <b>It checks the fix</b>
+      <p class="small muted">After you publish, it watches the new version. If the error comes back, you get a new, more detailed fix to try.</p>
+    </li>
+  </ol>
+
+  <p class="small muted"><b>You'll need:</b> your app published online, and access to the tool you built it with. It takes about five minutes.</p>
+
+  {{if .Error}}<p class="flash error">{{.Error}}</p>{{end}}
+  <h2>Add your first app</h2>
+  {{template "new_project_form" .}}
+  <p class="small muted">Next you'll see the install steps, and a "Getting started" list that ticks itself as you go.</p>
+</div>
+{{end}}

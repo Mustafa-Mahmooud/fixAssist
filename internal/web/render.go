@@ -66,6 +66,7 @@ var funcs = template.FuncMap{
 		return "Partly"
 	},
 	"agentName":   agentName,
+	"tipFor":      tipFor,
 	"backendName": backendName,
 	"ago":         ago,
 	"prettyJSON":  prettyJSON,
@@ -115,7 +116,7 @@ var funcs = template.FuncMap{
 var pages = map[string]*template.Template{}
 
 func init() {
-	for _, p := range []string{"login", "magic", "projects", "setup", "issues", "issue", "alerts", "feedback", "admin", "overview", "pages", "funnels", "insights", "admin_github"} {
+	for _, p := range []string{"login", "magic", "projects", "setup", "issues", "issue", "alerts", "feedback", "admin", "overview", "pages", "funnels", "insights", "admin_github", "welcome"} {
 		pages[p] = template.Must(template.New(p).Funcs(funcs).ParseFS(templateFS,
 			"templates/layout.html", "templates/partials.html", "templates/"+p+".html"))
 	}
@@ -132,6 +133,7 @@ type page struct {
 }
 
 func (a *App) render(w http.ResponseWriter, status int, name string, p page) {
+	a.withOnboarding(&p) // project pages: the "Getting started" checklist
 	var buf bytes.Buffer
 	if err := pages[name].ExecuteTemplate(&buf, "layout", p); err != nil {
 		a.Log.Error("render", "page", name, "err", err)

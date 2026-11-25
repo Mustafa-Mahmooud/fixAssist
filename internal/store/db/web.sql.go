@@ -90,6 +90,15 @@ func (q *Queries) DeleteWebSession(ctx context.Context, idHash []byte) error {
 	return err
 }
 
+const dismissOnboarding = `-- name: DismissOnboarding :exec
+update projects set onboarding_dismissed_at = now() where id = $1
+`
+
+func (q *Queries) DismissOnboarding(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, dismissOnboarding, id)
+	return err
+}
+
 const extendWebSession = `-- name: ExtendWebSession :exec
 update web_sessions set expires_at = $2 where id_hash = $1
 `
@@ -216,16 +225,17 @@ func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (GetUserByEm
 }
 
 const getWebSession = `-- name: GetWebSession :one
-select s.user_id, s.csrf_token, s.expires_at, u.email
+select s.user_id, s.csrf_token, s.expires_at, u.email, u.tips_hidden
 from web_sessions s join users u on u.id = s.user_id
 where s.id_hash = $1 and s.expires_at > now()
 `
 
 type GetWebSessionRow struct {
-	UserID    int64
-	CsrfToken string
-	ExpiresAt pgtype.Timestamptz
-	Email     string
+	UserID     int64
+	CsrfToken  string
+	ExpiresAt  pgtype.Timestamptz
+	Email      string
+	TipsHidden bool
 }
 
 func (q *Queries) GetWebSession(ctx context.Context, idHash []byte) (GetWebSessionRow, error) {
@@ -236,6 +246,7 @@ func (q *Queries) GetWebSession(ctx context.Context, idHash []byte) (GetWebSessi
 		&i.CsrfToken,
 		&i.ExpiresAt,
 		&i.Email,
+		&i.TipsHidden,
 	)
 	return i, err
 }
@@ -478,6 +489,50 @@ func (q *Queries) ProjectEventStats(ctx context.Context, projectID int64) (Proje
 	return i, err
 }
 
+const projectOnboarding = `-- name: ProjectOnboarding :one
+
+select
+  (p.onboarding_dismissed_at is not null)::boolean as dismissed,
+  (exists (select 1 from pageviews v where v.project_id = p.id)
+   or exists (select 1 from events e where e.project_id = p.id))::boolean as connected,
+  exists (select 1 from issues i where i.project_id = p.id)::boolean as has_issue,
+  exists (select 1 from fix_suggestions f join issues i on i.id = f.issue_id where i.project_id = p.id)::boolean as explained,
+  exists (select 1 from events e where e.project_id = p.id and e.kind = 'server')::boolean as server_errors,
+  exists (select 1 from project_github g where g.project_id = p.id and g.repo_full_name is not null)::boolean as code_connected,
+  exists (select 1 from agent_tokens t where t.project_id = p.id and t.revoked_at is null)::boolean as agent_connected,
+  coalesce((select i.id from issues i where i.project_id = p.id order by i.impact_score desc, i.last_seen_at desc limit 1), 0)::bigint as first_issue_id
+from projects p where p.id = $1
+`
+
+type ProjectOnboardingRow struct {
+	Dismissed      bool
+	Connected      bool
+	HasIssue       bool
+	Explained      bool
+	ServerErrors   bool
+	CodeConnected  bool
+	AgentConnected bool
+	FirstIssueID   int64
+}
+
+// Onboarding ---------------------------------------------------------------
+// Progress is read from the data, so it can't drift from what happened.
+func (q *Queries) ProjectOnboarding(ctx context.Context, id int64) (ProjectOnboardingRow, error) {
+	row := q.db.QueryRow(ctx, projectOnboarding, id)
+	var i ProjectOnboardingRow
+	err := row.Scan(
+		&i.Dismissed,
+		&i.Connected,
+		&i.HasIssue,
+		&i.Explained,
+		&i.ServerErrors,
+		&i.CodeConnected,
+		&i.AgentConnected,
+		&i.FirstIssueID,
+	)
+	return i, err
+}
+
 const pruneAuth = `-- name: PruneAuth :exec
 with t as (delete from login_tokens where expires_at < now() - interval '1 day')
 delete from web_sessions where expires_at < now()
@@ -504,6 +559,20 @@ func (q *Queries) SetIssueStatus(ctx context.Context, arg SetIssueStatusParams) 
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const setTipsHidden = `-- name: SetTipsHidden :exec
+update users set tips_hidden = $1 where id = $2
+`
+
+type SetTipsHiddenParams struct {
+	Hidden bool
+	ID     int64
+}
+
+func (q *Queries) SetTipsHidden(ctx context.Context, arg SetTipsHiddenParams) error {
+	_, err := q.db.Exec(ctx, setTipsHidden, arg.Hidden, arg.ID)
+	return err
 }
 
 const useLoginToken = `-- name: UseLoginToken :one

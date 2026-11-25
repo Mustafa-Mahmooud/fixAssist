@@ -119,7 +119,7 @@ func (f *fixture) signIn(t *testing.T, email string) (*http.Client, string) {
 		t.Fatal(err)
 	}
 	b := body(t, resp)
-	if resp.Request.URL.Path != "/projects" || !strings.Contains(b, "Connect your first app") {
+	if resp.Request.URL.Path != "/projects" || !strings.Contains(b, "Welcome to Fix Assistant") {
 		t.Fatalf("after sign-in: %s %s", resp.Request.URL, b)
 	}
 	csrf := reCSRF.FindStringSubmatch(b)

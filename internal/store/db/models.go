@@ -401,18 +401,19 @@ type Pageview struct {
 }
 
 type Project struct {
-	ID             int64
-	OrgID          int64
-	Name           string
-	TargetAgent    string
-	Backend        string
-	StackTags      []string
-	AllowedDomains []string
-	QuotaMonthly   int64
-	HmacSecret     []byte
-	CreatedAt      pgtype.Timestamptz
-	KeyPages       []string
-	Timezone       string
+	ID                    int64
+	OrgID                 int64
+	Name                  string
+	TargetAgent           string
+	Backend               string
+	StackTags             []string
+	AllowedDomains        []string
+	QuotaMonthly          int64
+	HmacSecret            []byte
+	CreatedAt             pgtype.Timestamptz
+	KeyPages              []string
+	Timezone              string
+	OnboardingDismissedAt pgtype.Timestamptz
 }
 
 type ProjectGithub struct {
@@ -454,10 +455,11 @@ type RiverJob struct {
 }
 
 type User struct {
-	ID        int64
-	Email     string
-	GithubID  pgtype.Int8
-	CreatedAt pgtype.Timestamptz
+	ID         int64
+	Email      string
+	GithubID   pgtype.Int8
+	CreatedAt  pgtype.Timestamptz
+	TipsHidden bool
 }
 
 type WebSession struct {
