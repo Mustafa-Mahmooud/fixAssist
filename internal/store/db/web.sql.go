@@ -447,19 +447,34 @@ func (q *Queries) ListOrgProjects(ctx context.Context, orgID int64) ([]ListOrgPr
 }
 
 const projectEventStats = `-- name: ProjectEventStats :one
-select count(*)::bigint as events, max(received_at)::timestamptz as last_event_at
-from events where project_id = $1 and received_at > now() - interval '30 days'
+select
+  (select count(*) from events e where e.project_id = $1 and e.received_at > now() - interval '30 days')::bigint as events,
+  (select count(*) from events e where e.project_id = $1 and e.kind = 'server' and e.received_at > now() - interval '30 days')::bigint as server_events,
+  (select count(*) from pageviews v where v.project_id = $1 and v.ts > now() - interval '30 days')::bigint as page_views,
+  greatest(
+    (select max(e.received_at) from events e where e.project_id = $1 and e.received_at > now() - interval '30 days'),
+    (select max(v.ts) from pageviews v where v.project_id = $1 and v.ts > now() - interval '30 days')
+  )::timestamptz as last_event_at
 `
 
 type ProjectEventStatsRow struct {
-	Events      int64
-	LastEventAt pgtype.Timestamptz
+	Events       int64
+	ServerEvents int64
+	PageViews    int64
+	LastEventAt  pgtype.Timestamptz
 }
 
+// "Connected" means anything arrived: an error or a page view. A healthy site
+// may send only page views for a long time.
 func (q *Queries) ProjectEventStats(ctx context.Context, projectID int64) (ProjectEventStatsRow, error) {
 	row := q.db.QueryRow(ctx, projectEventStats, projectID)
 	var i ProjectEventStatsRow
-	err := row.Scan(&i.Events, &i.LastEventAt)
+	err := row.Scan(
+		&i.Events,
+		&i.ServerEvents,
+		&i.PageViews,
+		&i.LastEventAt,
+	)
 	return i, err
 }
 

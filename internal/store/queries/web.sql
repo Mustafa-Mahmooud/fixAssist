@@ -60,8 +60,16 @@ select p.id, p.name, p.target_agent, p.backend, p.allowed_domains, p.key_pages,
 from projects p where p.id = $1 and p.org_id = $2;
 
 -- name: ProjectEventStats :one
-select count(*)::bigint as events, max(received_at)::timestamptz as last_event_at
-from events where project_id = $1 and received_at > now() - interval '30 days';
+-- "Connected" means anything arrived: an error or a page view. A healthy site
+-- may send only page views for a long time.
+select
+  (select count(*) from events e where e.project_id = @project_id and e.received_at > now() - interval '30 days')::bigint as events,
+  (select count(*) from events e where e.project_id = @project_id and e.kind = 'server' and e.received_at > now() - interval '30 days')::bigint as server_events,
+  (select count(*) from pageviews v where v.project_id = @project_id and v.ts > now() - interval '30 days')::bigint as page_views,
+  greatest(
+    (select max(e.received_at) from events e where e.project_id = @project_id and e.received_at > now() - interval '30 days'),
+    (select max(v.ts) from pageviews v where v.project_id = @project_id and v.ts > now() - interval '30 days')
+  )::timestamptz as last_event_at;
 
 -- name: ListIssues :many
 select id, kind, title, route, status, first_seen_at, last_seen_at, event_count, user_count,

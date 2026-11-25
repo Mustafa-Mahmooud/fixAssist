@@ -23,15 +23,42 @@ func Explain(c *Context) Suggestion {
 		}
 	}
 	if !matched {
-		s = generic(c)
+		if c.srv() != nil {
+			s = genericServer(c)
+		} else {
+			s = generic(c)
+		}
 	}
 	s.WhoIsAffected = who(c)
+	s.FixPrompt += stackLocations(c.srv())
 	s.FixPrompt += whereToLook(c.CodeRefs)
 	if c.Attempt > 1 {
 		s.FixPrompt = fmt.Sprintf("A previous fix for this problem was applied, but the error is still happening (attempt %d). Before changing anything, look again at the cause; the first fix may have targeted the wrong place.\n\n", c.Attempt) + s.FixPrompt
+		s.FixPrompt += previousAttempts(c.Previous)
 		s.Confidence *= 0.8
 	}
 	return s
+}
+
+// previousAttempts lists what was already tried, so it isn't repeated.
+func previousAttempts(list []PrevAttempt) string {
+	var b strings.Builder
+	for _, a := range list {
+		if a.Summary == "" && len(a.Files) == 0 {
+			continue
+		}
+		if b.Len() == 0 {
+			b.WriteString("\n\nAlready tried, and the error still happened afterwards (don't repeat these; find what they missed):")
+		}
+		fmt.Fprintf(&b, "\n- Attempt %d", a.N)
+		if a.Summary != "" {
+			fmt.Fprintf(&b, ": %s", truncate(strings.Join(strings.Fields(a.Summary), " "), 400))
+		}
+		if len(a.Files) > 0 {
+			fmt.Fprintf(&b, " (changed %s)", strings.Join(a.Files, ", "))
+		}
+	}
+	return b.String()
 }
 
 func plural(n int64, one, many string) string {
@@ -69,9 +96,12 @@ func who(c *Context) string {
 	return b.String()
 }
 
+// shortRelease is a release as people know it: without our "server:" marker,
+// and long build hashes cut.
 func shortRelease(r string) string {
-	if len(r) > 12 {
-		return r[:12]
+	r = strings.TrimPrefix(r, "server:")
+	if len(r) > 20 {
+		return r[:20]
 	}
 	return r
 }

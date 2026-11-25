@@ -17,9 +17,9 @@
 {{end}}
 
 {{define "setup_status"}}
-<div id="setup-status"{{if not .Events}} hx-get="/projects/{{.ProjectID}}/setup/status" hx-trigger="every 3s" hx-swap="outerHTML"{{end}}>
-  {{if .Events}}
-    <p class="status-line"><span class="dot ok"></span><b>Connected.</b> {{.Events}} events in the last 30 days, the latest {{ago .LastEventAt}}.</p>
+<div id="setup-status"{{if not .Connected}} hx-get="/projects/{{.ProjectID}}/setup/status" hx-trigger="every 3s" hx-swap="outerHTML"{{end}}>
+  {{if .Connected}}
+    <p class="status-line"><span class="dot ok"></span><b>Connected.</b> In the last 30 days: {{.PageViews}} page views and {{.Events}} errors{{if .ServerEvents}} ({{.ServerEvents}} from your server){{end}}. Latest {{ago .LastEventAt}}.</p>
     <p><a class="button" href="/projects/{{.ProjectID}}/issues">See issues</a></p>
   {{else}}
     <p class="status-line"><span class="dot"></span>Waiting for the first event…</p>

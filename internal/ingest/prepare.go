@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,7 +19,39 @@ const (
 	KindJS      = "js"
 	KindNet     = "net"
 	KindMessage = "message"
+	KindServer  = "server"
 )
+
+// ServerReleasePrefix marks server releases in events.release_id and the
+// releases table, so backend and frontend deploys stay apart.
+const ServerReleasePrefix = "server:"
+
+// ServerError converts a server SDK event's exception chain.
+func ServerError(ev *Event) normalize.ServerError {
+	e := normalize.ServerError{Platform: ev.Platform, URL: ev.PageURL(), Transaction: ev.Transaction}
+	if ev.Exception == nil {
+		return e
+	}
+	for _, x := range ev.Exception.Values {
+		se := normalize.ServerException{Type: x.Type, Message: x.Value}
+		if x.Module != "" && !strings.Contains(x.Type, ".") {
+			se.Type = x.Module + "." + x.Type
+		}
+		if x.Stacktrace != nil {
+			for _, f := range x.Stacktrace.Frames {
+				// Server SDKs send a project-relative filename; abs_path is the
+				// build machine's full path.
+				fn := f.Filename
+				if fn == "" {
+					fn = f.AbsPath
+				}
+				se.Frames = append(se.Frames, normalize.ServerFrame{Module: f.Module, Function: f.Function, Filename: fn, Lineno: f.Lineno, InApp: f.InApp})
+			}
+		}
+		e.Chain = append(e.Chain, se)
+	}
+	return e
+}
 
 // EventRow is one event ready to store: scrubbed, with derived columns.
 type EventRow struct {
@@ -110,6 +143,9 @@ func NetFailure(h *HTTPContext) normalize.NetFailure {
 
 // Classify returns the event's kind and fingerprint.
 func Classify(ev *Event) (kind, fingerprint string) {
+	if ev.IsServer() && ev.MainException() != nil {
+		return KindServer, normalize.ServerFingerprint(ServerError(ev))
+	}
 	if h, ok := ev.HTTP(); ok {
 		return KindNet, normalize.NetFingerprint(NetFailure(h))
 	}
@@ -148,12 +184,19 @@ func Prepare(secret []byte, item []byte, now time.Time) (EventRow, error) {
 		return EventRow{}, err
 	}
 	kind, fp := Classify(ev)
+	release, route := ev.Release, normalize.RouteTemplate(ev.PageURL())
+	if kind == KindServer {
+		if release != "" {
+			release = ServerReleasePrefix + release
+		}
+		route = ServerError(ev).Route()
+	}
 	return EventRow{
 		ReceivedAt:  now,
 		Kind:        kind,
 		Fingerprint: fp,
-		ReleaseID:   truncate(ev.Release, 200),
-		Route:       truncate(normalize.RouteTemplate(ev.PageURL()), 500),
+		ReleaseID:   truncate(release, 200),
+		Route:       truncate(route, 500),
 		UserHash:    userHash,
 		Payload:     payload,
 	}, nil

@@ -75,7 +75,7 @@ type AnalyzeWorker struct {
 func (w *AnalyzeWorker) Work(ctx context.Context, job *river.Job[jobargs.AnalyzeIssue]) error {
 	attempt := 1
 	if job.Args.Reason == "regression" {
-		attempt = 2
+		attempt = ai.AttemptAfterFailure
 	}
 	id, s, err := ai.AnalyzeWith(ctx, w.Pool, job.Args.IssueID, attempt, w.Code)
 	if err != nil {

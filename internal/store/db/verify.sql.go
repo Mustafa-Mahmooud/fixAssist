@@ -29,15 +29,36 @@ func (q *Queries) EventsOnRelease(ctx context.Context, arg EventsOnReleaseParams
 	return column_1, err
 }
 
+const eventsSince = `-- name: EventsSince :one
+select count(*)::bigint from events
+where project_id = $1 and fingerprint = $2 and received_at >= $3
+`
+
+type EventsSinceParams struct {
+	ProjectID   int64
+	Fingerprint string
+	Since       pgtype.Timestamptz
+}
+
+func (q *Queries) EventsSince(ctx context.Context, arg EventsSinceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, eventsSince, arg.ProjectID, arg.Fingerprint, arg.Since)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const firstReleaseSince = `-- name: FirstReleaseSince :one
+
 select release_id, first_seen_at from releases
 where project_id = $1 and first_seen_at > $2
+  and (release_id like 'server:%') = $3::boolean
 order by first_seen_at limit 1
 `
 
 type FirstReleaseSinceParams struct {
 	ProjectID   int64
 	FirstSeenAt pgtype.Timestamptz
+	Server      bool
 }
 
 type FirstReleaseSinceRow struct {
@@ -45,8 +66,10 @@ type FirstReleaseSinceRow struct {
 	FirstSeenAt pgtype.Timestamptz
 }
 
+// Releases are per side: server releases are stored as "server:<release>"
+// (ingest), so a frontend deploy never verifies a server fix or vice versa.
 func (q *Queries) FirstReleaseSince(ctx context.Context, arg FirstReleaseSinceParams) (FirstReleaseSinceRow, error) {
-	row := q.db.QueryRow(ctx, firstReleaseSince, arg.ProjectID, arg.FirstSeenAt)
+	row := q.db.QueryRow(ctx, firstReleaseSince, arg.ProjectID, arg.FirstSeenAt, arg.Server)
 	var i FirstReleaseSinceRow
 	err := row.Scan(&i.ReleaseID, &i.FirstSeenAt)
 	return i, err
@@ -183,8 +206,19 @@ func (q *Queries) IssueFeedback(ctx context.Context, issueID int64) ([]IssueFeed
 	return items, nil
 }
 
+const issueKind = `-- name: IssueKind :one
+select kind from issues where id = $1
+`
+
+func (q *Queries) IssueKind(ctx context.Context, id int64) (string, error) {
+	row := q.db.QueryRow(ctx, issueKind, id)
+	var kind string
+	err := row.Scan(&kind)
+	return kind, err
+}
+
 const issuesToVerify = `-- name: IssuesToVerify :many
-select i.id, i.project_id, i.status, i.route, i.fingerprint, i.watch_since, i.verify_release_id, i.probably_fixed_at,
+select i.id, i.project_id, i.kind, i.status, i.route, i.fingerprint, i.watch_since, i.verify_release_id, i.probably_fixed_at,
        s.created_at as suggested_at
 from issues i
 join lateral (select created_at from fix_suggestions f where f.issue_id = i.id order by f.created_at desc limit 1) s on true
@@ -194,6 +228,7 @@ where i.status in ('explained', 'verifying')
 type IssuesToVerifyRow struct {
 	ID              int64
 	ProjectID       int64
+	Kind            string
 	Status          string
 	Route           pgtype.Text
 	Fingerprint     string
@@ -215,6 +250,7 @@ func (q *Queries) IssuesToVerify(ctx context.Context) ([]IssuesToVerifyRow, erro
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProjectID,
+			&i.Kind,
 			&i.Status,
 			&i.Route,
 			&i.Fingerprint,
@@ -235,16 +271,22 @@ func (q *Queries) IssuesToVerify(ctx context.Context) ([]IssuesToVerifyRow, erro
 
 const latestRelease = `-- name: LatestRelease :one
 select release_id, first_seen_at from releases
-where project_id = $1 order by first_seen_at desc limit 1
+where project_id = $1 and (release_id like 'server:%') = $2::boolean
+order by first_seen_at desc limit 1
 `
+
+type LatestReleaseParams struct {
+	ProjectID int64
+	Server    bool
+}
 
 type LatestReleaseRow struct {
 	ReleaseID   string
 	FirstSeenAt pgtype.Timestamptz
 }
 
-func (q *Queries) LatestRelease(ctx context.Context, projectID int64) (LatestReleaseRow, error) {
-	row := q.db.QueryRow(ctx, latestRelease, projectID)
+func (q *Queries) LatestRelease(ctx context.Context, arg LatestReleaseParams) (LatestReleaseRow, error) {
+	row := q.db.QueryRow(ctx, latestRelease, arg.ProjectID, arg.Server)
 	var i LatestReleaseRow
 	err := row.Scan(&i.ReleaseID, &i.FirstSeenAt)
 	return i, err
@@ -317,6 +359,26 @@ type SessionsOnRouteParams struct {
 
 func (q *Queries) SessionsOnRoute(ctx context.Context, arg SessionsOnRouteParams) (int64, error) {
 	row := q.db.QueryRow(ctx, sessionsOnRoute, arg.ProjectID, arg.Route, arg.ReleaseID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const sessionsOnRouteSince = `-- name: SessionsOnRouteSince :one
+select count(distinct session_id)::bigint from pageviews
+where project_id = $1 and route = $2 and ts >= $3
+`
+
+type SessionsOnRouteSinceParams struct {
+	ProjectID int64
+	Route     string
+	Since     pgtype.Timestamptz
+}
+
+// Server fixes: page traffic carries the frontend release, not the server's,
+// so traffic is counted by time instead.
+func (q *Queries) SessionsOnRouteSince(ctx context.Context, arg SessionsOnRouteSinceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, sessionsOnRouteSince, arg.ProjectID, arg.Route, arg.Since)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err

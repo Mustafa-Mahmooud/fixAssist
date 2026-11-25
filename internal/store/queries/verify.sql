@@ -1,18 +1,36 @@
 -- name: IssuesToVerify :many
-select i.id, i.project_id, i.status, i.route, i.fingerprint, i.watch_since, i.verify_release_id, i.probably_fixed_at,
+select i.id, i.project_id, i.kind, i.status, i.route, i.fingerprint, i.watch_since, i.verify_release_id, i.probably_fixed_at,
        s.created_at as suggested_at
 from issues i
 join lateral (select created_at from fix_suggestions f where f.issue_id = i.id order by f.created_at desc limit 1) s on true
 where i.status in ('explained', 'verifying');
 
+-- Releases are per side: server releases are stored as "server:<release>"
+-- (ingest), so a frontend deploy never verifies a server fix or vice versa.
+
 -- name: FirstReleaseSince :one
 select release_id, first_seen_at from releases
-where project_id = $1 and first_seen_at > $2
+where project_id = @project_id and first_seen_at > @first_seen_at
+  and (release_id like 'server:%') = @server::boolean
 order by first_seen_at limit 1;
 
 -- name: LatestRelease :one
 select release_id, first_seen_at from releases
-where project_id = $1 order by first_seen_at desc limit 1;
+where project_id = @project_id and (release_id like 'server:%') = @server::boolean
+order by first_seen_at desc limit 1;
+
+-- name: IssueKind :one
+select kind from issues where id = $1;
+
+-- name: SessionsOnRouteSince :one
+-- Server fixes: page traffic carries the frontend release, not the server's,
+-- so traffic is counted by time instead.
+select count(distinct session_id)::bigint from pageviews
+where project_id = @project_id and route = @route and ts >= @since;
+
+-- name: EventsSince :one
+select count(*)::bigint from events
+where project_id = @project_id and fingerprint = @fingerprint and received_at >= @since;
 
 -- name: StartVerifying :execrows
 update issues set status = 'verifying', verify_release_id = @release_id, watch_since = @watch_since, probably_fixed_at = null

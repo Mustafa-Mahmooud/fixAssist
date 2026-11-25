@@ -36,6 +36,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/yourname/fixassist/internal/agentapi"
 	"github.com/yourname/fixassist/internal/ai"
 	"github.com/yourname/fixassist/internal/alerts"
 	"github.com/yourname/fixassist/internal/analytics"
@@ -252,6 +253,8 @@ func serve(ctx context.Context, log *slog.Logger, args []string) error {
 			Code:       code,
 			Log:        log,
 		}).Register(mux)
+		// The agent loop: MCP at /mcp, JSON at /agent/v1 (agent tokens).
+		(&agentapi.Handler{Pool: pool, Code: code, Log: log}).Register(mux)
 		log.Info("dashboard", "url", base)
 	}
 	if enabled["worker"] {

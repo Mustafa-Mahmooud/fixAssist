@@ -95,11 +95,45 @@ func TruncateIP(s string) string {
 	return ip.Mask(net.CIDRMask(48, 128)).String()
 }
 
+// dropFrameVars removes local variable values from stack frames: server SDKs
+// can attach them, and they hold whatever the request was processing.
+func dropFrameVars(v any) {
+	values := func(x any) []any {
+		if m, ok := x.(map[string]any); ok {
+			l, _ := m["values"].([]any)
+			return l
+		}
+		l, _ := x.([]any)
+		return l
+	}
+	for _, x := range values(v) {
+		m, ok := x.(map[string]any)
+		if !ok {
+			continue
+		}
+		st, _ := m["stacktrace"].(map[string]any)
+		frames, _ := st["frames"].([]any)
+		for _, f := range frames {
+			if fm, ok := f.(map[string]any); ok {
+				delete(fm, "vars")
+			}
+		}
+	}
+}
+
 // ScrubEvent cleans a decoded event in place.
 func ScrubEvent(ev map[string]any) {
+	// Server SDK extras we never need: installed packages, thread dumps,
+	// debug images, and local variables.
+	delete(ev, "modules")
+	delete(ev, "threads")
+	delete(ev, "debug_meta")
+	dropFrameVars(ev["exception"])
 	if req, ok := ev["request"].(map[string]any); ok {
 		delete(req, "cookies")
 		delete(req, "data")
+		delete(req, "env")          // server environment: REMOTE_ADDR, SERVER_NAME, ...
+		delete(req, "query_string") // raw "a=1&b=2"; the URL keeps the keys only
 		if h, ok := req["headers"].(map[string]any); ok {
 			for k := range h {
 				if sensitiveHeader.MatchString(k) {

@@ -34,11 +34,11 @@ var dayStatements = []string{
 	`delete from daily_page_stats where day = $1`,
 	`insert into daily_page_stats (project_id, day, route, device, views, visitors, sessions, exits, load_ms_sum, load_ms_count)
 	 with pv as (
-	   select project_id, route, coalesce(device, 'unknown') as device, visitor_hash, session_id, ts, load_ms
+	   select id, project_id, route, coalesce(device, 'unknown') as device, visitor_hash, session_id, ts, load_ms
 	   from pageviews where ts >= $2 and ts < $3
 	 ), last as (
 	   select distinct on (project_id, session_id) project_id, session_id, route
-	   from pv where session_id is not null order by project_id, session_id, ts desc
+	   from pv where session_id is not null order by project_id, session_id, ts desc, id desc -- a batch shares one ts: insertion order breaks the tie
 	 )
 	 select pv.project_id, $1::date, pv.route, pv.device, count(*), count(distinct pv.visitor_hash), count(distinct pv.session_id),
 	   count(distinct pv.session_id) filter (where exists (
@@ -161,13 +161,13 @@ func rollupFunnels(ctx context.Context, tx pgx.Tx, day, start, end time.Time) er
 	for _, f := range funnels {
 		evs, err := tx.Query(ctx, `
 			select session_id, coalesce(device, 'unknown'), kind, value from (
-			  select session_id, device, 'page' as kind, route as value, ts from pageviews
+			  select session_id, device, 'page' as kind, route as value, ts, 0 as src, id from pageviews
 			  where project_id = $1 and ts >= $2 and ts < $3 and session_id is not null
 			  union all
-			  select session_id, device, case type when 'custom' then 'event' else type end, coalesce(name, ''), ts
+			  select session_id, device, case type when 'custom' then 'event' else type end, coalesce(name, ''), ts, 1, id
 			  from analytics_events
 			  where project_id = $1 and ts >= $2 and ts < $3 and session_id is not null and type in ('click', 'custom', 'signup')
-			) e order by session_id, ts`, f.project, start, end)
+			) e order by session_id, ts, src, id`, f.project, start, end)
 		if err != nil {
 			return err
 		}

@@ -188,6 +188,51 @@ func TestPipelineGoldenEnvelopes(t *testing.T) {
 	}
 }
 
+// Server SDKs authenticate with X-Sentry-Auth and send no Origin; the
+// project's domain list still applies to every browser request.
+func TestPipelineServerEnvelopes(t *testing.T) {
+	e := setup(t, &ingest.SampleCap{})
+	files, _ := filepath.Glob("testdata/server/*.envelope")
+	if len(files) < 9 {
+		t.Fatalf("found %d server fixtures", len(files))
+	}
+	path := fmt.Sprintf("%s/api/%d/envelope/", e.srv.URL, e.project.ID)
+	for _, f := range files {
+		body, _ := os.ReadFile(f)
+		req, _ := http.NewRequest("POST", path, strings.NewReader(string(body)))
+		req.Header.Set("Content-Type", "application/x-sentry-envelope")
+		req.Header.Set("X-Sentry-Auth", "Sentry sentry_version=7, sentry_client=sentry.python/2.19.2, sentry_key="+e.project.PublicKey)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("%s: status %d", filepath.Base(f), resp.StatusCode)
+		}
+	}
+	n := int64(len(files))
+	if got := count(t, e.pool, "select count(*) from events where kind = 'server' and release_id like 'server:%'"); got != n {
+		t.Errorf("server events with a server release = %d, want %d", got, n)
+	}
+	if got := count(t, e.pool, "select count(distinct fingerprint) from events where kind = 'server'"); got != n-1 {
+		t.Errorf("distinct server fingerprints = %d, want %d (the two /orders/<id> crashes are one)", got, n-1)
+	}
+	for _, bad := range []string{"someone@example.com", "first@example.com", "secret-cookie", "203.0.113.7", `"vars"`} {
+		if got := count(t, e.pool, "select count(*) from events where payload::text like '%' || $1 || '%'", bad); got != 0 {
+			t.Errorf("%d stored payloads contain %q", got, bad)
+		}
+	}
+	// A browser on another site is still refused, with or without a key.
+	if resp := e.post(t, fmt.Sprintf("/api/%d/envelope/", e.project.ID), e.project.PublicKey, "https://evil.example", []byte(`{}`+"\n"+`{"type":"event"}`+"\n"+`{"message":"x"}`)); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("foreign origin: status %d, want 403", resp.StatusCode)
+	}
+	// Page views only come from browsers: no Origin is still refused there.
+	if resp := e.post(t, "/v1/pv", e.project.PublicKey, "", []byte(`{"path":"/"}`)); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("page view without origin: status %d, want 403", resp.StatusCode)
+	}
+}
+
 func TestPipelineRejections(t *testing.T) {
 	e := setup(t, &ingest.SampleCap{})
 	body := goldenEnvelopes(t)[0]
@@ -264,6 +309,11 @@ func TestPipelineSampleCapAndPageviews(t *testing.T) {
 	}
 	if got := count(t, e.pool, "select count(*) from pageviews where route = '/orders/<id>' and load_ms = 321"); got != 1 {
 		t.Errorf("templated pageview rows = %d", got)
+	}
+	// A new site version is noticed from page views alone (a working fix
+	// sends no errors), without counting as an error.
+	if got := count(t, e.pool, "select count(*) from releases where release_id = 'fix-1' and event_count = 0"); got != 1 {
+		t.Errorf("release from page views = %d rows, want 1", got)
 	}
 }
 

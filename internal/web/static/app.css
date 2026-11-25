@@ -147,3 +147,9 @@ svg.chart text { fill: var(--muted); font-size: 11px; }
 .funnel-step:first-of-type { border-top: 0; }
 .funnel-bar { height: .6rem; background: var(--code-bg); border-radius: 999px; overflow: hidden; margin: .4rem 0; }
 .funnel-bar span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+
+/* A one-time message that must be read (a new agent token). */
+.notice { border: 1px solid var(--accent); border-radius: 8px; padding: 0.75rem 1rem; margin: 0.75rem 0; }
+.notice p { margin-top: 0; }
+.attempts { padding-left: 1.1rem; }
+.attempts li { margin: 0.4rem 0; }

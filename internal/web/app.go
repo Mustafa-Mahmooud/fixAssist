@@ -14,12 +14,14 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/yourname/fixassist/internal/agentapi"
 	"github.com/yourname/fixassist/internal/ai"
 	"github.com/yourname/fixassist/internal/auth"
 	"github.com/yourname/fixassist/internal/github"
 	"github.com/yourname/fixassist/internal/obs"
 	"github.com/yourname/fixassist/internal/projects"
 	"github.com/yourname/fixassist/internal/store/db"
+	"github.com/yourname/fixassist/internal/verify"
 )
 
 const sessionCookie = "fix_session"
@@ -62,6 +64,8 @@ func (a *App) Register(mux *http.ServeMux) {
 	mux.Handle("POST /projects", a.signedIn(a.createProject))
 	mux.Handle("GET /projects/{id}/setup", a.signedIn(a.setupPage))
 	mux.Handle("GET /projects/{id}/setup/status", a.signedIn(a.setupStatus))
+	mux.Handle("POST /projects/{id}/agent-tokens", a.signedIn(a.createAgentToken))
+	mux.Handle("POST /projects/{id}/agent-tokens/{token}/revoke", a.signedIn(a.revokeAgentToken))
 	mux.Handle("GET /projects/{id}/issues", a.signedIn(a.issuesPage))
 	mux.Handle("GET /projects/{id}/issues/{issue}", a.signedIn(a.issuePage))
 	mux.Handle("POST /projects/{id}/issues/{issue}/status", a.signedIn(a.setIssueStatus))
@@ -280,14 +284,18 @@ func (a *App) fail(w http.ResponseWriter, err error) {
 // --- setup ----------------------------------------------------------------
 
 type setupStatus struct {
-	ProjectID   int64
-	Events      int64
-	LastEventAt time.Time
+	ProjectID    int64
+	Events       int64 // errors from the browser and the server
+	ServerEvents int64
+	PageViews    int64
+	Connected    bool
+	LastEventAt  time.Time
 }
 
 func (a *App) status(ctx context.Context, projectID int64) (setupStatus, error) {
 	st, err := db.New(a.Pool).ProjectEventStats(ctx, projectID)
-	return setupStatus{ProjectID: projectID, Events: st.Events, LastEventAt: st.LastEventAt.Time}, err
+	return setupStatus{ProjectID: projectID, Events: st.Events, ServerEvents: st.ServerEvents, PageViews: st.PageViews,
+		Connected: st.Events+st.PageViews > 0, LastEventAt: st.LastEventAt.Time}, err
 }
 
 func (a *App) setupPage(w http.ResponseWriter, r *http.Request) {
@@ -295,16 +303,86 @@ func (a *App) setupPage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	a.renderSetup(w, r, p, "")
+}
+
+// renderSetup renders the Setup page; newToken is an agent token to show
+// once, right after it was created.
+func (a *App) renderSetup(w http.ResponseWriter, r *http.Request, p db.GetOrgProjectRow, newToken string) {
 	st, err := a.status(r.Context(), p.ID)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
 	tag := ScriptTag(a.IngestBase, p.PublicKey)
+	dsn, err := projects.DSN(a.IngestBase, p.PublicKey, p.ID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	tokens, err := db.New(a.Pool).ListAgentTokens(r.Context(), p.ID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	shown := newToken
+	if shown == "" {
+		shown = "<your agent token>"
+	}
+	mcpURL := strings.TrimRight(a.BaseURL, "/") + "/mcp"
 	a.render(w, 200, "setup", page{Title: "Setup", Session: sessionFrom(r), Data: map[string]any{
 		"Project": p, "ScriptTag": tag, "Prompt": InstallPrompt(p.TargetAgent, tag), "Status": st,
 		"GitHub": a.githubStatus(r, p.ID),
+		"DSN":    dsn, "ServerPrompt": ServerPrompt(dsn), "ServerSnippets": ServerSnippets(dsn),
+		"AgentTokens": tokens, "NewToken": newToken, "MCPURL": mcpURL,
+		"AgentSetups": AgentSetups(mcpURL, shown), "LoopPrompt": LoopPrompt(), "MaxAttempts": verify.MaxAttempts,
 	}})
+}
+
+// createAgentToken makes a token for the agent loop and shows it once.
+func (a *App) createAgentToken(w http.ResponseWriter, r *http.Request) {
+	p, ok := a.project(w, r)
+	if !ok {
+		return
+	}
+	name := strings.TrimSpace(r.PostFormValue("name"))
+	if name == "" {
+		name = "AI agent"
+	}
+	if len(name) > 60 {
+		name = name[:60]
+	}
+	token, hash, prefix, err := agentapi.NewToken()
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	if _, err := db.New(a.Pool).CreateAgentToken(r.Context(), db.CreateAgentTokenParams{
+		ProjectID: p.ID, Name: name, TokenHash: hash, Prefix: prefix,
+		CreatedBy: pgtype.Int8{Int64: sessionFrom(r).UserID, Valid: true},
+	}); err != nil {
+		a.fail(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	a.renderSetup(w, r, p, token)
+}
+
+func (a *App) revokeAgentToken(w http.ResponseWriter, r *http.Request) {
+	p, ok := a.project(w, r)
+	if !ok {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("token"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := db.New(a.Pool).RevokeAgentToken(r.Context(), db.RevokeAgentTokenParams{ID: id, ProjectID: p.ID}); err != nil {
+		a.fail(w, err)
+		return
+	}
+	http.Redirect(w, r, "/projects/"+strconv.FormatInt(p.ID, 10)+"/setup#agent-loop", http.StatusSeeOther)
 }
 
 func (a *App) setupStatus(w http.ResponseWriter, r *http.Request) {
@@ -412,6 +490,12 @@ func (a *App) issuePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data["Feedback"] = fb
+	attempts, err := q.FixAttempts(r.Context(), is.ID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	data["Attempts"] = attempts
 	if is.Status == "verifying" {
 		data["Verify"] = a.verifyProgress(r, p.ID, is)
 	}
@@ -448,11 +532,7 @@ func (a *App) explainNow(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	attempt := 1
-	if is.Status == "open" && is.RegressionCount > 0 {
-		attempt = 2
-	}
-	if _, _, err := ai.AnalyzeWith(r.Context(), a.Pool, is.ID, attempt, a.Code); err != nil {
+	if _, _, err := ai.AnalyzeWith(r.Context(), a.Pool, is.ID, ai.AttemptAuto, a.Code); err != nil {
 		a.fail(w, err)
 		return
 	}

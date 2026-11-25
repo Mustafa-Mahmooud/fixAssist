@@ -57,6 +57,15 @@ func (c *Context) js() *JSSample {
 }
 
 func (c *Context) page() string {
+	if c.Route == "" {
+		if s := c.srv(); s != nil {
+			// A server error outside a web request: a background job.
+			if s.Transaction != "" {
+				return "the background task `" + s.Transaction + "`"
+			}
+			return "a background job"
+		}
+	}
 	switch c.Route {
 	case "", "/":
 		return "the home page (/)"
@@ -134,8 +143,9 @@ var (
 	reNotDefined   = regexp.MustCompile(`([\w$]+) is not defined`)
 )
 
-// catalog is checked in order; the first match wins.
-var catalog = []entry{
+// baseCatalog is the original catalog (Phase 4); catalog_more.go assembles
+// the full, ordered catalog around it.
+var baseCatalog = []entry{
 	{
 		key:   "pg.value_too_long",
 		match: func(c *Context) bool { return pgCode(c, "22001") },

@@ -82,6 +82,10 @@ func Record(ctx context.Context, q *db.Queries, issueID int64, outcome, source, 
 	default:
 		return nil // partial doesn't move confidence
 	}
+	// The applied fix (agent loop) now has its outcome.
+	if err := q.CloseLatestAttempt(ctx, db.CloseLatestAttemptParams{IssueID: issueID, Outcome: text(outcome)}); err != nil {
+		return err
+	}
 	if !kbID.Valid {
 		return nil // a quarantine fallback: the answer isn't about the pattern's fix
 	}
@@ -100,8 +104,12 @@ func Answer(ctx context.Context, pool *pgxpool.Pool, projectID, issueID int64, o
 	}
 	return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		q := db.New(tx)
+		kind, err := q.IssueKind(ctx, issueID)
+		if err != nil {
+			return err
+		}
 		release, since := "", now
-		if r, err := q.LatestRelease(ctx, projectID); err == nil {
+		if r, err := q.LatestRelease(ctx, db.LatestReleaseParams{ProjectID: projectID, Server: kind == KindServer}); err == nil {
 			release, since = r.ReleaseID, r.FirstSeenAt.Time
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			return err
@@ -126,9 +134,17 @@ func Answer(ctx context.Context, pool *pgxpool.Pool, projectID, issueID int64, o
 	})
 }
 
-// Applied is the "I applied the fix" button: watch the next release.
+// Applied is the "I applied the fix" button: watch the next release. It is
+// recorded as the founder's attempt, like an agent's report_fix.
 func Applied(ctx context.Context, pool *pgxpool.Pool, projectID, issueID int64, now time.Time) error {
-	_, err := db.New(pool).StartVerifyingManual(ctx, db.StartVerifyingManualParams{ID: issueID, ProjectID: projectID, WatchSince: ts(now)})
+	_, err := ReportFix(ctx, pool, projectID, issueID, Report{Source: "founder"}, now)
+	if errors.Is(err, ErrTooManyAttempts) {
+		// The founder can always keep trying; only agents are stopped.
+		_, err = db.New(pool).StartVerifyingManual(ctx, db.StartVerifyingManualParams{ID: issueID, ProjectID: projectID, WatchSince: ts(now)})
+	}
+	if errors.Is(err, ErrNotFixable) {
+		return nil
+	}
 	return err
 }
 
@@ -139,9 +155,19 @@ type Stats struct {
 	ProbablyFixed    int
 }
 
+// KindServer is ingest.KindServer (not imported: ingest doesn't depend on verify, but grouping does).
+const KindServer = "server"
+
 // Run applies rules 1, 2 and 4 to every explained or verifying issue. It is
 // the verify_fixes job (every 15 minutes). State changes are conditional on
 // the current status, so overlapping runs are safe.
+//
+// Server errors differ in two ways. Their releases are the server's own
+// (stored as "server:<release>"), so only a server deploy starts their
+// verification. And page traffic carries the frontend's release, so their
+// traffic and recurrences are counted from the time the watch started; after
+// "I applied the fix" they don't wait for a release name to change, since
+// many servers keep the same one across deploys.
 func Run(ctx context.Context, pool *pgxpool.Pool, rules Rules, now time.Time) (Stats, error) {
 	var st Stats
 	q := db.New(pool)
@@ -150,9 +176,10 @@ func Run(ctx context.Context, pool *pgxpool.Pool, rules Rules, now time.Time) (S
 		return st, err
 	}
 	for _, is := range list {
+		server := is.Kind == KindServer
 		switch is.Status {
 		case "explained":
-			r, err := q.FirstReleaseSince(ctx, db.FirstReleaseSinceParams{ProjectID: is.ProjectID, FirstSeenAt: is.SuggestedAt})
+			r, err := q.FirstReleaseSince(ctx, db.FirstReleaseSinceParams{ProjectID: is.ProjectID, FirstSeenAt: is.SuggestedAt, Server: server})
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue
 			}
@@ -167,7 +194,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, rules Rules, now time.Time) (S
 
 		case "verifying":
 			release, since := is.VerifyReleaseID.String, is.WatchSince
-			if !is.VerifyReleaseID.Valid {
+			if !is.VerifyReleaseID.Valid && !server {
 				// "I applied the fix": wait for the next release.
 				r, err := q.FirstReleaseSince(ctx, db.FirstReleaseSinceParams{ProjectID: is.ProjectID, FirstSeenAt: is.WatchSince})
 				if errors.Is(err, pgx.ErrNoRows) {
@@ -181,14 +208,23 @@ func Run(ctx context.Context, pool *pgxpool.Pool, rules Rules, now time.Time) (S
 				}
 				release, since = r.ReleaseID, r.FirstSeenAt
 			}
-			events, err := q.EventsOnRelease(ctx, db.EventsOnReleaseParams{ProjectID: is.ProjectID, Fingerprint: is.Fingerprint, ReleaseID: text(release)})
+			var events, sessions int64
+			if server {
+				events, err = q.EventsSince(ctx, db.EventsSinceParams{ProjectID: is.ProjectID, Fingerprint: is.Fingerprint, Since: since})
+			} else {
+				events, err = q.EventsOnRelease(ctx, db.EventsOnReleaseParams{ProjectID: is.ProjectID, Fingerprint: is.Fingerprint, ReleaseID: text(release)})
+			}
 			if err != nil {
 				return st, err
 			}
 			if events > 0 {
 				continue // grouping reopens it (rule 3)
 			}
-			sessions, err := q.SessionsOnRoute(ctx, db.SessionsOnRouteParams{ProjectID: is.ProjectID, Route: is.Route.String, ReleaseID: text(release)})
+			if server {
+				sessions, err = q.SessionsOnRouteSince(ctx, db.SessionsOnRouteSinceParams{ProjectID: is.ProjectID, Route: is.Route.String, Since: since})
+			} else {
+				sessions, err = q.SessionsOnRoute(ctx, db.SessionsOnRouteParams{ProjectID: is.ProjectID, Route: is.Route.String, ReleaseID: text(release)})
+			}
 			if err != nil {
 				return st, err
 			}

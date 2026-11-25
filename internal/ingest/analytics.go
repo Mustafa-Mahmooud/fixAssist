@@ -143,7 +143,7 @@ func (h *Handler) analyticsEvents(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, statusFor(err), "bad body", err)
 		return
 	}
-	p, ok := h.resolve(w, r, PublicKey(r, ""), "")
+	p, ok := h.resolve(w, r, PublicKey(r, ""), "", false)
 	if !ok {
 		return
 	}

@@ -59,6 +59,18 @@ func (ns NullRiverJobState) Value() (driver.Value, error) {
 	return string(ns.RiverJobState), nil
 }
 
+type AgentToken struct {
+	ID         int64
+	ProjectID  int64
+	Name       string
+	TokenHash  string
+	Prefix     string
+	CreatedBy  pgtype.Int8
+	CreatedAt  pgtype.Timestamptz
+	LastUsedAt pgtype.Timestamptz
+	RevokedAt  pgtype.Timestamptz
+}
+
 type AlertLog struct {
 	ID        int64
 	ProjectID int64
@@ -179,6 +191,22 @@ type Event struct {
 	UserHash    pgtype.Text
 	Payload     []byte
 	GroupedAt   pgtype.Timestamptz
+}
+
+type FixAttempt struct {
+	ID           int64
+	IssueID      int64
+	SuggestionID pgtype.Int8
+	Attempt      int32
+	Source       string
+	AgentTokenID pgtype.Int8
+	ReleaseID    pgtype.Text
+	Summary      string
+	Files        []string
+	ReportedAt   pgtype.Timestamptz
+	ReproducedAt pgtype.Timestamptz
+	Outcome      pgtype.Text
+	OutcomeAt    pgtype.Timestamptz
 }
 
 type FixFeedback struct {

@@ -158,7 +158,8 @@ func TestSignInAndProjects(t *testing.T) {
 	if !strings.HasSuffix(resp.Request.URL.Path, "/setup") {
 		t.Fatalf("after create: %s", resp.Request.URL)
 	}
-	for _, want := range []string{"Ask Lovable to install it", "index.html, inside &lt;head&gt;", `data-fix-sdk src=&#34;https://ingest.example.com/sdk/`, `hx-trigger="every 3s"`, "Waiting for the first event"} {
+	for _, want := range []string{"Ask Lovable to install it", "index.html, inside &lt;head&gt;", `data-fix-sdk src=&#34;https://ingest.example.com/sdk/`, `hx-trigger="every 3s"`, "Waiting for the first event",
+		"Catch server errors too", "Add server-side error reporting", "@ingest.example.com/", "sentry_sdk.init(dsn=", "builder.WebHost.UseSentry", "Sentry.setupExpressErrorHandler", "No server errors received yet"} {
 		if !strings.Contains(b, want) {
 			t.Errorf("setup page missing %q", want)
 		}
@@ -175,14 +176,54 @@ func TestSignInAndProjects(t *testing.T) {
 	if err := ensurePartition(f.pool); err != nil {
 		t.Fatal(err)
 	}
+	statusPartial := func() string {
+		t.Helper()
+		req, _ := http.NewRequest("GET", f.srv.URL+projectPath+"/setup/status", nil)
+		req.Header.Set("HX-Request", "true")
+		resp, _ := c.Do(req)
+		return body(t, resp)
+	}
+	// A page view alone counts: a healthy site may send no errors at all.
+	if _, err := f.pool.Exec(context.Background(), `insert into pageviews (project_id, route, session_id) values ($1, '/', 's1')`, pid); err != nil {
+		t.Fatal(err)
+	}
+	if b := statusPartial(); !strings.Contains(b, "Connected.") || !strings.Contains(b, "1 page views and 0 errors") || strings.Contains(b, "hx-trigger") {
+		t.Errorf("status partial after a page view: %s", b)
+	}
 	if _, err := f.pool.Exec(context.Background(), `insert into events (project_id, kind, fingerprint) values ($1, 'js', 'v2:x')`, pid); err != nil {
 		t.Fatal(err)
 	}
-	req, _ := http.NewRequest("GET", f.srv.URL+projectPath+"/setup/status", nil)
-	req.Header.Set("HX-Request", "true")
-	resp, _ = c.Do(req)
-	if b := body(t, resp); !strings.Contains(b, "Connected.") || strings.Contains(b, "hx-trigger") {
-		t.Errorf("status partial: %s", b)
+	if b := statusPartial(); !strings.Contains(b, "1 page views and 1 errors") {
+		t.Errorf("status partial after an error: %s", b)
+	}
+
+	// Agent loop: a token is shown once, inside ready-to-paste setups.
+	resp, _ = c.PostForm(f.srv.URL+projectPath+"/agent-tokens", url.Values{"csrf": {csrf}, "name": {"Cursor on my laptop"}})
+	b = body(t, resp)
+	token := regexp.MustCompile(`fa_[A-Za-z0-9_-]{32}`).FindString(b)
+	if resp.StatusCode != 200 || token == "" {
+		t.Fatalf("create token: %d, no token shown", resp.StatusCode)
+	}
+	for _, want := range []string{"Copy it now", "claude mcp add --transport http fix-assistant", "/mcp --header &#34;Authorization: Bearer " + token, "Cursor on my laptop", "Use the fix-assistant tools"} {
+		if !strings.Contains(b, want) {
+			t.Errorf("token page missing %q", want)
+		}
+	}
+	if resp.Header.Get("Cache-Control") != "no-store" {
+		t.Error("the page showing a token must not be cached")
+	}
+	resp, _ = c.Get(setupURL)
+	if b := body(t, resp); strings.Contains(b, token) || !strings.Contains(b, "&lt;your agent token&gt;") {
+		t.Error("the token is shown again, or the placeholder is missing")
+	}
+	var tokenID int64
+	_ = f.pool.QueryRow(context.Background(), "select id from agent_tokens where project_id = $1", pid).Scan(&tokenID)
+	resp, _ = c.PostForm(fmt.Sprintf("%s%s/agent-tokens/%d/revoke", f.srv.URL, projectPath, tokenID), url.Values{"csrf": {csrf}})
+	body(t, resp)
+	var revoked bool
+	_ = f.pool.QueryRow(context.Background(), "select revoked_at is not null from agent_tokens where id = $1", tokenID).Scan(&revoked)
+	if !revoked {
+		t.Error("revoke didn't revoke")
 	}
 
 	// Issues page lists grouped issues, sorted by impact.

@@ -13,6 +13,7 @@ type Event struct {
 	Platform    string                     `json:"platform"`
 	Release     string                     `json:"release"`
 	Environment string                     `json:"environment"`
+	Transaction string                     `json:"transaction"`
 	Exception   *ExceptionList             `json:"exception"`
 	Request     *Request                   `json:"request"`
 	Tags        map[string]string          `json:"-"`
@@ -59,6 +60,7 @@ type ExceptionList struct {
 type Exception struct {
 	Type       string      `json:"type"`
 	Value      string      `json:"value"`
+	Module     string      `json:"module"`
 	Stacktrace *Stacktrace `json:"stacktrace"`
 	Mechanism  *struct {
 		Type    string `json:"type"`
@@ -80,6 +82,15 @@ type Frame struct {
 	Lineno   int    `json:"lineno"`
 	Colno    int    `json:"colno"`
 	InApp    *bool  `json:"in_app"`
+	// Server SDKs send the source line; browser SDKs only with source maps.
+	ContextLine string `json:"context_line"`
+}
+
+// IsServer reports whether the event came from a server SDK (any language)
+// rather than the browser. Browser SDKs send platform "javascript"; server
+// SDKs send their language: node, python, csharp, php, ruby, java, go, ...
+func (e *Event) IsServer() bool {
+	return e.Platform != "" && e.Platform != "javascript"
 }
 
 // Request is the page the event happened on.

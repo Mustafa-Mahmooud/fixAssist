@@ -68,6 +68,23 @@ on conflict (project_id, release_id) do update set
   event_count = releases.event_count + 1
 returning first_seen_at, (xmax = 0)::boolean as inserted;
 
+-- name: SeeRelease :exec
+-- A version seen in a page view: a deploy is noticed even when the new
+-- version has no errors (which is what a working fix looks like). Doesn't
+-- count as an event; last_seen is refreshed at most once a minute.
+insert into releases (project_id, release_id, first_seen_at, last_seen_at, event_count)
+values (@project_id, @release_id, @seen_at, @seen_at, 0)
+on conflict (project_id, release_id) do update set last_seen_at = excluded.last_seen_at
+where releases.last_seen_at < excluded.last_seen_at - interval '1 minute';
+
+-- name: ServerReleaseSince :one
+-- Whether a server release first appeared at or after @since: then an event
+-- from an older server release is an instance still draining during a
+-- rolling deploy, not a recurrence.
+select exists (
+  select 1 from releases where project_id = @project_id and release_id like 'server:%' and first_seen_at >= @since
+)::boolean;
+
 -- name: ReopenIssue :execrows
 update issues set status = 'open', regressed_at = @at, regression_count = regression_count + 1
 where id = @id and status in ('fixed', 'verifying');

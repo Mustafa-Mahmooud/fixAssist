@@ -206,6 +206,48 @@ func (q *Queries) ReopenIssue(ctx context.Context, arg ReopenIssueParams) (int64
 	return result.RowsAffected(), nil
 }
 
+const seeRelease = `-- name: SeeRelease :exec
+insert into releases (project_id, release_id, first_seen_at, last_seen_at, event_count)
+values ($1, $2, $3, $3, 0)
+on conflict (project_id, release_id) do update set last_seen_at = excluded.last_seen_at
+where releases.last_seen_at < excluded.last_seen_at - interval '1 minute'
+`
+
+type SeeReleaseParams struct {
+	ProjectID int64
+	ReleaseID string
+	SeenAt    pgtype.Timestamptz
+}
+
+// A version seen in a page view: a deploy is noticed even when the new
+// version has no errors (which is what a working fix looks like). Doesn't
+// count as an event; last_seen is refreshed at most once a minute.
+func (q *Queries) SeeRelease(ctx context.Context, arg SeeReleaseParams) error {
+	_, err := q.db.Exec(ctx, seeRelease, arg.ProjectID, arg.ReleaseID, arg.SeenAt)
+	return err
+}
+
+const serverReleaseSince = `-- name: ServerReleaseSince :one
+select exists (
+  select 1 from releases where project_id = $1 and release_id like 'server:%' and first_seen_at >= $2
+)::boolean
+`
+
+type ServerReleaseSinceParams struct {
+	ProjectID int64
+	Since     pgtype.Timestamptz
+}
+
+// Whether a server release first appeared at or after @since: then an event
+// from an older server release is an instance still draining during a
+// rolling deploy, not a recurrence.
+func (q *Queries) ServerReleaseSince(ctx context.Context, arg ServerReleaseSinceParams) (bool, error) {
+	row := q.db.QueryRow(ctx, serverReleaseSince, arg.ProjectID, arg.Since)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const setIssueImpact = `-- name: SetIssueImpact :exec
 update issues set impact_score = $2 where id = $1
 `

@@ -40,4 +40,82 @@
   <p class="muted">Visit any page of the published app. The first event shows up here as soon as it arrives.</p>
   {{template "setup_status" .Data.Status}}
 </div>
+<div class="card" id="server-errors">
+  <h2 style="margin-top:0">3. Catch server errors too <span class="muted small">(optional)</span></h2>
+  <p class="muted">The script above sees problems in your visitors' browsers. If your app also has its own server code (a backend in Node.js, Python, .NET, PHP, Ruby, Java, Go or another language), errors there, such as a database refusing to save, only show up if the server reports them. Paste this into your AI agent, or send it to whoever builds your backend:</p>
+  <div class="copy-wrap">
+    <pre id="server-prompt">{{.Data.ServerPrompt}}</pre>
+    <button type="button" class="secondary" data-copy="#server-prompt">Copy</button>
+  </div>
+  <details>
+    <summary>Or set it up yourself</summary>
+    <p class="muted small">Your server's address (DSN). It's safe to put in your code: it can only send errors to this project.</p>
+    <div class="copy-wrap">
+      <pre id="server-dsn">{{.Data.DSN}}</pre>
+      <button type="button" class="secondary" data-copy="#server-dsn">Copy</button>
+    </div>
+    <p class="muted small">Pick your backend. Each setup sends errors only, with no personal data. Setting the <code>SENTRY_RELEASE</code> environment variable to something that changes on every deploy (such as the git commit) lets Fix Assistant check fixes automatically after each deploy.</p>
+    {{range $i, $s := .Data.ServerSnippets}}
+    <details>
+      <summary>{{$s.Name}}</summary>
+      <div class="copy-wrap">
+        <pre id="server-snippet-{{$i}}">{{$s.Code}}</pre>
+        <button type="button" class="secondary" data-copy="#server-snippet-{{$i}}">Copy</button>
+      </div>
+    </details>
+    {{end}}
+  </details>
+  {{if .Data.Status.ServerEvents}}
+    <p class="status-line"><span class="dot ok"></span><b>Server connected.</b> {{.Data.Status.ServerEvents}} server errors in the last 30 days.</p>
+  {{else}}
+    <p class="status-line muted"><span class="dot"></span>No server errors received yet. That's normal until your server is set up, and good news after.</p>
+  {{end}}
+</div>
+<div class="card" id="agent-loop">
+  <h2 style="margin-top:0">4. Let your AI agent fix issues in a loop <span class="muted small">(optional)</span></h2>
+  <p class="muted">Coding agents that support MCP (Claude Code, Cursor, VS Code, Windsurf) can connect to Fix Assistant directly. They read an issue, make the fix, report it after deploying, and ask Fix Assistant whether the error stopped. If it came back, they get the new evidence and try again, up to {{.Data.MaxAttempts}} times, then hand over to you.</p>
+  {{if .Data.NewToken}}
+    <div class="notice">
+      <p><b>Your new agent token.</b> Copy it now: it won't be shown again. Treat it like a password and don't commit it to your repository.</p>
+      <div class="copy-wrap">
+        <pre id="agent-token">{{.Data.NewToken}}</pre>
+        <button type="button" class="secondary" data-copy="#agent-token">Copy</button>
+      </div>
+    </div>
+  {{end}}
+  <form method="post" action="/projects/{{.Data.Project.ID}}/agent-tokens" class="row">
+    <input type="hidden" name="csrf" value="{{.Session.CSRF}}">
+    <label for="token-name" style="margin:0">Name</label>
+    <input id="token-name" name="name" placeholder="e.g. Cursor on my laptop" maxlength="60" style="width:auto">
+    <button type="submit">Create an agent token</button>
+  </form>
+  {{if .Data.AgentTokens}}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Token</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+      <tbody>
+      {{range .Data.AgentTokens}}
+        <tr><td>{{.Name}} <code class="muted small">{{.Prefix}}…</code></td><td>{{ago .CreatedAt.Time}}</td><td>{{if .LastUsedAt.Valid}}{{ago .LastUsedAt.Time}}{{else}}never{{end}}</td>
+          <td class="num"><form method="post" action="/projects/{{$.Data.Project.ID}}/agent-tokens/{{.ID}}/revoke"><input type="hidden" name="csrf" value="{{$.Session.CSRF}}"><button class="link">Revoke</button></form></td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+  <p class="muted small">Then connect your agent{{if not .Data.NewToken}} (replace <code>&lt;your agent token&gt;</code>){{end}}:</p>
+  {{range $i, $s := .Data.AgentSetups}}
+  <details>
+    <summary>{{$s.Name}} <span class="muted small">· {{$s.Where}}</span></summary>
+    <div class="copy-wrap">
+      <pre id="agent-setup-{{$i}}">{{$s.Code}}</pre>
+      <button type="button" class="secondary" data-copy="#agent-setup-{{$i}}">Copy</button>
+    </div>
+  </details>
+  {{end}}
+  <p class="muted small">Finally, ask your agent:</p>
+  <div class="copy-wrap">
+    <pre id="loop-prompt">{{.Data.LoopPrompt}}</pre>
+    <button type="button" class="secondary" data-copy="#loop-prompt">Copy</button>
+  </div>
+</div>
 {{end}}

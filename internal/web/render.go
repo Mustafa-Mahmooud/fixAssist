@@ -75,6 +75,8 @@ var funcs = template.FuncMap{
 			return "Network request"
 		case "js":
 			return "Page error"
+		case "server":
+			return "Server error"
 		default:
 			return "Message"
 		}

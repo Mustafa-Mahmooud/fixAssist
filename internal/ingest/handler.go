@@ -155,7 +155,7 @@ func statusFor(err error) int {
 
 // resolve authenticates the key and checks the project id and origin.
 // It writes the error response and returns ok=false on failure.
-func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, key, pathProject string) (projects.Project, bool) {
+func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, key, pathProject string, allowNoOrigin bool) (projects.Project, bool) {
 	if key == "" {
 		h.fail(w, http.StatusUnauthorized, "missing sentry_key", nil)
 		return projects.Project{}, false
@@ -176,7 +176,11 @@ func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, key, pathProje
 		h.fail(w, http.StatusForbidden, "key does not belong to this project", nil)
 		return p, false
 	}
-	if !projects.OriginAllowed(p.AllowedDomains, r.Header.Get("Origin")) {
+	origin := r.Header.Get("Origin")
+	// Server SDKs send no Origin. Browsers always send one on these
+	// cross-origin POSTs, so allowing its absence doesn't open the endpoint
+	// to other websites; the domain list still applies to every browser.
+	if !(origin == "" && allowNoOrigin) && !projects.OriginAllowed(p.AllowedDomains, origin) {
 		h.fail(w, http.StatusForbidden, "origin not allowed for this project", nil)
 		return p, false
 	}
@@ -231,7 +235,7 @@ func (h *Handler) store(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) accept(w http.ResponseWriter, r *http.Request, data []byte, env *Envelope) {
-	p, ok := h.resolve(w, r, PublicKey(r, env.Header.DSN), r.PathValue("project_id"))
+	p, ok := h.resolve(w, r, PublicKey(r, env.Header.DSN), r.PathValue("project_id"), true)
 	if !ok {
 		return
 	}
@@ -350,7 +354,7 @@ func (h *Handler) pageview(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, statusFor(err), "bad body", err)
 		return
 	}
-	p, ok := h.resolve(w, r, PublicKey(r, ""), "")
+	p, ok := h.resolve(w, r, PublicKey(r, ""), "", false)
 	if !ok {
 		return
 	}

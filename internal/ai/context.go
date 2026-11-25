@@ -72,7 +72,18 @@ type Context struct {
 	Attempt      int // 2+ when the previous fix did not work
 	Net          []NetSample
 	JS           []JSSample
+	Server       []ServerSample
 	Message      string
+	Previous     []PrevAttempt // fixes that were applied and didn't hold
+}
+
+// PrevAttempt is an applied fix that didn't work.
+type PrevAttempt struct {
+	N       int
+	Source  string // agent or founder
+	Summary string
+	Files   []string
+	Release string
 }
 
 // MaxSamples is how many samples go into a prompt (FDR: up to 3).
@@ -82,11 +93,15 @@ var reEngineIdent = regexp.MustCompile(`(?:\(reading '|\(evaluating '|can't acce
 
 // AddSample decodes one stored event payload into the context.
 func (c *Context) AddSample(payload []byte) {
-	if payload == nil || len(c.Net)+len(c.JS) >= MaxSamples {
+	if payload == nil || len(c.Net)+len(c.JS)+len(c.Server) >= MaxSamples {
 		return
 	}
 	ev, err := ingest.ParseEvent(payload)
 	if err != nil {
+		return
+	}
+	if ev.IsServer() && ev.MainException() != nil {
+		c.Server = append(c.Server, serverSample(ev))
 		return
 	}
 	if h, ok := ev.HTTP(); ok {

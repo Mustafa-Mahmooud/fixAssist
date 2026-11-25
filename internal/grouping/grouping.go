@@ -91,6 +91,12 @@ func Describe(kind string, payload []byte, tags normalize.Tags) (title, signatur
 		return kind + " issue", kind
 	}
 	switch kind {
+	case ingest.KindServer:
+		if ev.MainException() != nil {
+			se := ingest.ServerError(ev)
+			root := se.Root()
+			return cut(normalize.ShortType(root.Type)+": "+root.Message, 140), normalize.ServerSignature(se, tags)
+		}
 	case ingest.KindNet:
 		if h, ok := ev.HTTP(); ok {
 			n := ingest.NetFailure(h)
@@ -212,9 +218,16 @@ func GroupEvent(ctx context.Context, pool *pgxpool.Pool, eventID int64, received
 		// Regression (FDR verification rule 3): a fixed or verifying issue
 		// reappears on the watched release or a newer one. Events from older
 		// releases (tabs that haven't reloaded since the fix) don't count.
-		if (issue.Status == "fixed" || issue.Status == "verifying") && release != "" &&
+		regressed := (issue.Status == "fixed" || issue.Status == "verifying") && release != "" &&
 			release != issue.FixedReleaseID.String &&
-			(!issue.WatchSince.Valid || !releaseFirstSeen.Before(issue.WatchSince.Time)) {
+			(!issue.WatchSince.Valid || !releaseFirstSeen.Before(issue.WatchSince.Time))
+		if ev.Kind == ingest.KindServer && (issue.Status == "fixed" || issue.Status == "verifying") {
+			regressed, err = serverRegressed(ctx, q, ev.ProjectID, release, releaseFirstSeen, issue.WatchSince, seen)
+			if err != nil {
+				return err
+			}
+		}
+		if regressed {
 			n, err := q.ReopenIssue(ctx, db.ReopenIssueParams{At: ts(now), ID: issue.ID})
 			if err != nil {
 				return err
@@ -243,6 +256,27 @@ func GroupEvent(ctx context.Context, pool *pgxpool.Pool, eventID int64, received
 		return q.MarkEventIssue(ctx, db.MarkEventIssueParams{IssueID: pgtype.Int8{Int64: issue.ID, Valid: true}, ID: ev.ID, ReceivedAt: ev.ReceivedAt})
 	})
 	return res, err
+}
+
+// serverRegressed is rule 3 for server errors. A server has no stale browser
+// tabs, and many apps never change their release name between deploys, so
+// any occurrence after the watch started counts, except one from an older
+// release while a newer server release exists (an old instance still
+// draining during a rolling deploy).
+func serverRegressed(ctx context.Context, q *db.Queries, projectID int64, release string, releaseFirstSeen time.Time, watchSince pgtype.Timestamptz, seen time.Time) (bool, error) {
+	if watchSince.Valid && seen.Before(watchSince.Time) {
+		return false, nil // happened before the fix went out; grouped late
+	}
+	if release != "" && watchSince.Valid && releaseFirstSeen.Before(watchSince.Time) {
+		newer, err := q.ServerReleaseSince(ctx, db.ServerReleaseSinceParams{ProjectID: projectID, Since: watchSince})
+		if err != nil {
+			return false, err
+		}
+		if newer {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func boolInt(b bool) int64 {

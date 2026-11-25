@@ -54,7 +54,14 @@ func (s *PGSink) Envelope(ctx context.Context, rec Received) error {
 func (s *PGSink) Pageview(ctx context.Context, rec Received) error {
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		q := db.New(tx)
+		seen := map[string]bool{}
 		for _, pv := range rec.Pageviews {
+			if pv.ReleaseID != "" && !seen[pv.ReleaseID] {
+				seen[pv.ReleaseID] = true
+				if err := q.SeeRelease(ctx, db.SeeReleaseParams{ProjectID: rec.Project.ID, ReleaseID: pv.ReleaseID, SeenAt: pgtype.Timestamptz{Time: pv.TS, Valid: true}}); err != nil {
+					return err
+				}
+			}
 			load := pgtype.Int4{}
 			if pv.LoadMS != nil {
 				load = pgtype.Int4{Int32: *pv.LoadMS, Valid: true}

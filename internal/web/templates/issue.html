@@ -76,6 +76,18 @@
     {{range $n, $f := .}}{{if $n}} · {{end}}{{outcomeLabel $f.Outcome}} ({{if eq $f.Source "implicit"}}checked automatically{{else}}you said{{end}}, {{ago $f.CreatedAt.Time}}){{end}}
   </p>
   {{end}}
+  {{with $.Data.Attempts}}
+  <h3>Fixes applied</h3>
+  <ul class="attempts">
+    {{range .}}
+    <li><b>Attempt {{.Attempt}}</b> · {{if eq .Source "agent"}}your AI agent{{else}}you{{end}} · {{ago .ReportedAt.Time}} ·
+      {{if eq .Outcome.String "worked"}}<span class="badge fixed">held</span>{{else if eq .Outcome.String "failed"}}<span class="badge open">came back</span>{{else}}<span class="badge verifying">checking</span>{{end}}
+      {{if .Summary}}<br><span class="small">{{.Summary}}</span>{{end}}
+      {{if .Files}}<br><span class="muted small">{{range $n, $f := .Files}}{{if $n}}, {{end}}<code>{{$f}}</code>{{end}}</span>{{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
 </div>
 {{else}}
 <div class="card">

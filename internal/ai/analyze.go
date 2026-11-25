@@ -14,6 +14,14 @@ import (
 	"github.com/yourname/fixassist/internal/store/db"
 )
 
+// Attempt numbers worked out from the issue's history (Load):
+// AttemptAuto is one more than the fixes that didn't hold;
+// AttemptAfterFailure is the same but at least 2 (a fix just failed).
+const (
+	AttemptAuto         = 0
+	AttemptAfterFailure = -1
+)
+
 // Load builds the context for an issue from the database.
 func Load(ctx context.Context, q *db.Queries, issueID int64, attempt int) (*Context, error) {
 	is, err := q.GetIssueForAnalysis(ctx, issueID)
@@ -34,11 +42,31 @@ func Load(ctx context.Context, q *db.Queries, issueID int64, attempt int) (*Cont
 		Users: is.UserCount, Events: is.EventCount, Events24h: st, FirstSeen: is.FirstSeenAt.Time,
 		FirstRelease: is.FirstReleaseID.String, Regressions: is.RegressionCount, Attempt: attempt,
 	}
-	if c.Attempt < 1 {
-		c.Attempt = 1
-	}
 	for _, s := range samples {
 		c.AddSample(s.Payload)
+	}
+	// What was already tried (agent loop, "I applied the fix"), so the next
+	// prompt doesn't repeat it.
+	attempts, err := q.FixAttempts(ctx, issueID)
+	if err != nil {
+		return nil, err
+	}
+	failed := 0
+	for _, a := range attempts {
+		if a.Outcome.String == "failed" {
+			failed++
+			c.Previous = append(c.Previous, PrevAttempt{N: int(a.Attempt), Source: a.Source, Summary: a.Summary, Files: a.Files, Release: a.ReleaseID.String})
+		}
+	}
+	// Automatic attempt numbers: one more than the fixes that didn't hold.
+	switch c.Attempt {
+	case AttemptAuto:
+		c.Attempt = max(int(is.RegressionCount), failed) + 1
+	case AttemptAfterFailure:
+		c.Attempt = max(int(is.RegressionCount), failed, 1) + 1
+	}
+	if c.Attempt < 1 {
+		c.Attempt = 1
 	}
 	return c, nil
 }
