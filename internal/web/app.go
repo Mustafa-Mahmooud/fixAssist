@@ -99,7 +99,9 @@ func (a *App) secureCookies() bool { return strings.HasPrefix(a.BaseURL, "https:
 
 func securityHeaders(w http.ResponseWriter) {
 	h := w.Header()
-	h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+	// form-action also allows GitHub: the GitHub App manifest form posts to
+	// github.com, and "Connect GitHub" redirects there after its POST.
+	h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self' https://github.com")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "same-origin")
 }

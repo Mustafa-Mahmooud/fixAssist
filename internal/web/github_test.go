@@ -198,6 +198,11 @@ func TestAdminGitHubManifestSavesConfig(t *testing.T) {
 
 	// The admin page posts the manifest to GitHub with a signed state.
 	resp, _ = c.Get(srv.URL + "/admin/github")
+	// Browsers enforce form-action: the manifest form (and Connect GitHub's
+	// redirect) go to github.com, so the policy must allow it.
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "form-action 'self' https://github.com") {
+		t.Errorf("CSP blocks the form to GitHub: %s", csp)
+	}
 	b := body(t, resp)
 	m := regexp.MustCompile(`action="[^"]*/settings/apps/new\?state=([^"]+)"`).FindStringSubmatch(b)
 	if m == nil {
