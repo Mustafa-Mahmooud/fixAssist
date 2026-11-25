@@ -1,0 +1,106 @@
+{{define "content"}}
+<article class="legal">
+<h1>Privacy policy</h1>
+<p class="muted small">Effective 25 November 2026</p>
+
+<p class="lead">Fix Assistant helps founders find and fix the errors in their apps. To do that, it collects error reports and basic visit data from the apps it's installed on, and removes personal details before anything is stored. This page explains exactly what is collected, why, how long it's kept, and who handles it.</p>
+
+<p>There are two groups of people involved:</p>
+<ul>
+  <li><b>Customers</b>: the founders and teams who create a Fix Assistant account and install it on their app.</li>
+  <li><b>Visitors</b>: the people who use a customer's app. Fix Assistant processes their data <b>on behalf of the customer</b>, who decides to install it and is responsible for telling their visitors (see <a href="#for-customers">For customers</a>).</li>
+</ul>
+
+<h2 id="accounts">1. Customer accounts</h2>
+<table>
+  <tr><th>What</th><th>Why</th></tr>
+  <tr><td>Email address</td><td>Signing in (by email link or GitHub), and sending the alerts and summaries you asked for.</td></tr>
+  <tr><td>GitHub user ID and username, if you sign in with GitHub</td><td>Recognizing you the next time you sign in. Your GitHub access token is used once and never stored.</td></tr>
+  <tr><td>Your projects and their settings (name, builder, backend, allowed domains)</td><td>Running the service for your apps.</td></tr>
+  <tr><td>A session cookie in your browser</td><td>Keeping you signed in for up to 30 days. See <a href="#cookies">Cookies</a>.</td></tr>
+  <tr><td>Agent tokens you create</td><td>Letting your coding agent connect. Only a one-way hash of each token is stored.</td></tr>
+</table>
+
+<h2 id="visitors">2. Data from the apps Fix Assistant is installed on</h2>
+<p>When a customer installs the Fix Assistant script on their website (and, optionally, an error-reporting package on their server), it sends:</p>
+<table>
+  <tr><th>What</th><th>Details</th></tr>
+  <tr><td>Error reports</td><td>The error's type and message, where in the code it happened (stack trace), the page or request path, the browser and device type, and the app version. For failed requests: the method, address, status code and up to 2 KB of the response, after cleaning.</td></tr>
+  <tr><td>Page views</td><td>The page path, how long it took to load, the device type (desktop, mobile, tablet), the app version, and a random ID for the browser tab that ends when the tab is closed.</td></tr>
+  <tr><td>Clicks and sign-ups</td><td>The label of buttons and links that were clicked, and whether a sign-up or login succeeded. <b>What people type into forms is never collected.</b></td></tr>
+  <tr><td>Country</td><td>Worked out from the IP address when the data arrives, using an offline database (DB-IP). <b>IP addresses of page views are never stored.</b> On error reports, IP addresses are shortened (the last part removed) before storing.</td></tr>
+  <tr><td>Daily visitor count</td><td>To count unique visitors without cookies, Fix Assistant computes a one-way code from the IP address, browser and date, mixed with a secret per app. It changes every day and can't be turned back into an IP address or used to follow someone across days.</td></tr>
+</table>
+
+<h3>What is removed before anything is stored</h3>
+<p>Personal details are removed twice: in the visitor's browser, and again on our server. This covers:</p>
+<ul>
+  <li>email addresses, passwords, login tokens, API keys and card numbers found in messages and data;</li>
+  <li>the values in web addresses (for example <code>?email=...</code>; the field names are kept);</li>
+  <li>cookies, authorization headers and request bodies;</li>
+  <li>on servers, the values of local variables and the server's environment;</li>
+  <li>user IDs set by the app, which are replaced with a one-way code unique to that app.</li>
+</ul>
+<p>Customers who need it can also turn off visit tracking entirely, so only errors are sent.</p>
+
+<h2 id="code">3. Customers' code (optional)</h2>
+<p>If a customer connects a GitHub repository, Fix Assistant gets <b>read-only</b> access to the repositories they choose. When it explains an error, it reads the code in memory to find the relevant file. It keeps only the file path, the line number and a snippet of up to 120 characters. <b>Code is never stored or shared.</b> The customer can disconnect at any time, from Fix Assistant or from GitHub.</p>
+
+<h2 id="use">4. How the data is used</h2>
+<ul>
+  <li>To group errors into issues, explain them, and write fix suggestions for the customer.</li>
+  <li>To send the customer the alerts, daily summaries and weekly ideas they receive.</li>
+  <li>To check whether a fix worked, after the customer publishes it.</li>
+  <li>To show the customer traffic statistics for their own app.</li>
+  <li>To improve fix suggestions across all apps. For this, only the <b>pattern</b> of an error (for example "value too long for a database column") and counts of how often a fix worked are shared between apps. No visitor data, error details or customer names are shared, and other apps only ever see totals.</li>
+</ul>
+<p>Fix Assistant doesn't sell data, doesn't show ads, and doesn't use AI models from other companies to process your data.</p>
+
+<h2 id="cookies">5. Cookies and browser storage</h2>
+<ul>
+  <li><b>On Fix Assistant's own website:</b> one cookie to keep you signed in (30 days), and a short-lived cookie (10 minutes) while you sign in with GitHub. Both are needed for the service to work. No advertising or tracking cookies.</li>
+  <li><b>On customers' apps:</b> the script sets <b>no cookies</b>. It keeps a random tab ID in the browser's session storage, which is cleared when the tab is closed. Only if the customer turns it on (after asking their visitors' consent) does it also keep a random visitor ID in the browser's local storage, for more accurate returning-visitor counts.</li>
+</ul>
+
+<h2 id="processors">6. Who else handles the data</h2>
+<table>
+  <tr><th>Service</th><th>What it does</th><th>Where</th></tr>
+  <tr><td>Northflank</td><td>Hosts the application and its database</td><td>European Union (Western Europe)</td></tr>
+  <tr><td>Google (Gmail)</td><td>Delivers the emails Fix Assistant sends: sign-in links, alerts and summaries</td><td>Google's global infrastructure</td></tr>
+  <tr><td>GitHub</td><td>Sign in with GitHub, and read-only code access for customers who connect a repository</td><td>United States</td></tr>
+</table>
+<p>The country database (DB-IP) is a file Fix Assistant downloads. No data is sent to DB-IP. Data is only disclosed to others if the law requires it.</p>
+
+<h2 id="retention">7. How long data is kept</h2>
+<ul>
+  <li><b>Raw error reports, page views and clicks:</b> 30 days, then deleted automatically.</li>
+  <li><b>Issues</b> (the grouped errors, with up to 20 cleaned example reports each), <b>fix suggestions</b> and <b>daily statistics</b>: for as long as the customer's project exists.</li>
+  <li><b>Sign-in links:</b> 15 minutes (or until used). <b>Sessions:</b> 30 days.</li>
+  <li><b>Accounts:</b> until the customer asks for deletion.</li>
+</ul>
+
+<h2 id="security">8. Security</h2>
+<p>All traffic is encrypted (HTTPS). The database is not reachable from the internet. Session cookies and agent tokens are stored only as one-way hashes. The keys of the GitHub App are stored encrypted. Each customer can only see their own projects.</p>
+
+<h2 id="rights">9. Your rights</h2>
+<p>You can ask to see, correct, export or delete your data, or object to how it's used, by emailing <a href="mailto:{{.Data.Contact}}">{{.Data.Contact}}</a>. Requests are answered within 30 days.</p>
+<ul>
+  <li><b>Customers</b> can also ask for a project or their whole account to be deleted, including all of its data.</li>
+  <li><b>Visitors</b> of an app that uses Fix Assistant should first contact that app's owner, who controls the data. Because Fix Assistant removes personal details and doesn't use cookies to identify people, it usually can't link stored data to a specific visitor. If you write to us, we'll help however we can.</li>
+</ul>
+<p>Depending on where you live (for example in the EU, the UK or Egypt), you may also have the right to complain to your data protection authority.</p>
+
+<h2 id="for-customers">10. For customers: telling your visitors</h2>
+<p>If you install Fix Assistant on your app, you're responsible for telling your visitors in your own privacy policy. You can adapt this text:</p>
+<pre class="copyable">We use Fix Assistant to find and fix errors in our app. When an error happens, or when you view a page, it receives technical information such as the error message, the page address, your browser and device type, and your approximate country. Personal details like email addresses and passwords are removed before anything is stored, IP addresses are not stored, and no cookies are used. This information is kept for 30 days. Learn more: {{.Data.PolicyURL}}</pre>
+
+<h2 id="children">11. Children</h2>
+<p>Fix Assistant is a tool for businesses and isn't meant for children. Customer accounts are for people aged 16 or older.</p>
+
+<h2 id="changes">12. Changes to this policy</h2>
+<p>If this policy changes in a way that matters, customers will be told by email before the change takes effect. The date at the top always shows the latest version.</p>
+
+<h2 id="contact">13. Contact</h2>
+<p>Questions or requests: <a href="mailto:{{.Data.Contact}}">{{.Data.Contact}}</a>.</p>
+</article>
+{{end}}

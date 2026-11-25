@@ -12,7 +12,7 @@
 //	app eval [--agent lovable] [--show NAME|all]
 //
 // Config comes from the environment: DATABASE_URL, INGEST_PUBLIC_URL,
-// APP_PUBLIC_URL, APP_SECRET, STAFF_EMAILS, METRICS_TOKEN, GEOIP_DB, TRUST_PROXY,
+// APP_PUBLIC_URL, APP_SECRET, STAFF_EMAILS, CONTACT_EMAIL, METRICS_TOKEN, GEOIP_DB, TRUST_PROXY,
 // GITHUB_APP_ID + GITHUB_APP_SLUG + GITHUB_CLIENT_ID + GITHUB_CLIENT_SECRET + GITHUB_APP_PRIVATE_KEY,
 // SMTP_HOST + SMTP_PORT + SMTP_USERNAME + SMTP_PASSWORD + EMAIL_FROM, or
 // RESEND_API_KEY + EMAIL_FROM (else dev mailer, EMAIL_DEV_DIR).
@@ -262,6 +262,7 @@ func serve(ctx context.Context, log *slog.Logger, args []string) error {
 			EmailOff:   alerts.Off(),
 			Secret:     secret,
 			Staff:      staffEmails(),
+			Contact:    contactEmail(),
 			Metrics:    metrics,
 			GitHub:     ghApp,
 			Code:       code,
@@ -567,4 +568,16 @@ func listen(ctx context.Context, log *slog.Logger, addr string, h http.Handler) 
 	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdown)
+}
+
+// contactEmail is shown on the privacy page: CONTACT_EMAIL, else the first
+// staff email.
+func contactEmail() string {
+	if e := strings.TrimSpace(os.Getenv("CONTACT_EMAIL")); e != "" {
+		return e
+	}
+	if s := staffEmails(); len(s) > 0 {
+		return s[0]
+	}
+	return ""
 }

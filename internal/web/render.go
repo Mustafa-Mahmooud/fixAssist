@@ -116,7 +116,7 @@ var funcs = template.FuncMap{
 var pages = map[string]*template.Template{}
 
 func init() {
-	for _, p := range []string{"login", "magic", "projects", "setup", "issues", "issue", "alerts", "feedback", "admin", "overview", "pages", "funnels", "insights", "admin_github", "welcome"} {
+	for _, p := range []string{"login", "magic", "projects", "setup", "issues", "issue", "alerts", "feedback", "admin", "overview", "pages", "funnels", "insights", "admin_github", "welcome", "privacy"} {
 		pages[p] = template.Must(template.New(p).Funcs(funcs).ParseFS(templateFS,
 			"templates/layout.html", "templates/partials.html", "templates/"+p+".html"))
 	}

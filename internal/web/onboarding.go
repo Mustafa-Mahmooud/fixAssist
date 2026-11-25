@@ -147,3 +147,15 @@ func backTo(r *http.Request, fallback string) string {
 	}
 	return ref.Path
 }
+
+// privacyPage is public: visitors of customers' apps read it too.
+func (a *App) privacyPage(w http.ResponseWriter, r *http.Request) {
+	securityHeaders(w)
+	contact := a.Contact
+	if contact == "" {
+		contact = "the address you received Fix Assistant emails from"
+	}
+	a.render(w, 200, "privacy", page{Title: "Privacy policy", Data: map[string]any{
+		"Contact": contact, "PolicyURL": strings.TrimRight(a.BaseURL, "/") + "/privacy",
+	}})
+}

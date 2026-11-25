@@ -97,3 +97,25 @@ func TestOnboarding(t *testing.T) {
 		t.Errorf("tips without csrf: %d", resp.StatusCode)
 	}
 }
+
+// The privacy policy is public, linked everywhere, and names the contact.
+func TestPrivacyPage(t *testing.T) {
+	f := setup(t)
+	resp, err := client(t).Get(f.srv.URL + "/privacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := body(t, resp)
+	if resp.StatusCode != 200 || resp.Request.URL.Path != "/privacy" {
+		t.Fatalf("privacy page: %d %s (it must not need a sign-in)", resp.StatusCode, resp.Request.URL)
+	}
+	for _, want := range []string{"Privacy policy", "never collected", "IP addresses of page views are never stored", "30 days", "Northflank", "#for-customers", "/privacy</pre>"} {
+		if !strings.Contains(b, want) {
+			t.Errorf("privacy page missing %q", want)
+		}
+	}
+	resp, _ = client(t).Get(f.srv.URL + "/login")
+	if b := body(t, resp); !strings.Contains(b, `href="/privacy"`) {
+		t.Error("no privacy link on the login page")
+	}
+}

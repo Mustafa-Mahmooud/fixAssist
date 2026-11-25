@@ -36,6 +36,7 @@ type App struct {
 	EmailOff   bool         // no email provider: the login page asks for an operator-issued link
 	Secret     []byte       // signs the feedback links in alert emails (APP_SECRET)
 	Staff      []string     // lowercase emails allowed into /admin (STAFF_EMAILS)
+	Contact    string       // shown on /privacy (CONTACT_EMAIL, else the first staff email)
 	Metrics    *obs.Metrics // optional, for the admin page
 	GitHub     *github.App  // optional: code context (Phase 7)
 	Code       ai.CodeSearcher
@@ -55,6 +56,7 @@ func sessionFrom(r *http.Request) *auth.Session {
 func (a *App) Register(mux *http.ServeMux) {
 	mux.Handle("GET /static/", staticHandler())
 	mux.HandleFunc("GET /login", a.loginPage)
+	mux.HandleFunc("GET /privacy", a.privacyPage)
 	mux.HandleFunc("POST /login", a.loginSubmit)
 	mux.HandleFunc("GET /auth/magic", a.magicPage)
 	mux.HandleFunc("GET /auth/github", a.githubSignInStart)

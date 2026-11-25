@@ -179,3 +179,11 @@ svg.chart text { fill: var(--muted); font-size: 11px; }
 /* Sign in with GitHub */
 a.button.github { display: block; text-align: center; padding: 0.7rem 1rem; font-weight: 600; }
 .or { text-align: center; margin: 0.5rem 0; }
+
+/* Privacy policy and footer */
+.legal { max-width: 46rem; }
+.legal table { width: 100%; border-collapse: collapse; margin: 0.5rem 0 1rem; }
+.legal th, .legal td { text-align: left; vertical-align: top; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border); }
+.legal h2 { margin-top: 2rem; }
+.legal pre.copyable { white-space: pre-wrap; }
+footer.site { text-align: center; padding: 2rem 1rem; }
