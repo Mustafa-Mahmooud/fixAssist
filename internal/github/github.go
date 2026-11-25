@@ -279,7 +279,9 @@ func Manifest(baseURL string) []byte {
 	base := strings.TrimRight(baseURL, "/")
 	host := strings.TrimPrefix(strings.TrimPrefix(base, "https://"), "http://")
 	m := map[string]any{
-		"name":                     "Fix Assistant (" + host + ")",
+		// GitHub App names are global and at most 34 characters: a short code
+		// from the host keeps each deployment's name unique.
+		"name":                     fmt.Sprintf("Fix Assistant %x", sha256.Sum256([]byte(host)))[:20],
 		"url":                      base,
 		"redirect_url":             base + "/admin/github/callback",
 		"callback_urls":            []string{base + "/github/setup"},

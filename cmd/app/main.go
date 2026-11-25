@@ -208,6 +208,13 @@ func serve(ctx context.Context, log *slog.Logger, args []string) error {
 	if err != nil {
 		return fmt.Errorf("github app: %w", err)
 	}
+	if ghApp == nil {
+		// Saved by /admin/github's manifest flow (hosted deployments).
+		if ghApp, err = github.LoadConfig(ctx, pool, secret); err != nil {
+			log.Error("github app config not loaded; code context is off", "err", err)
+			ghApp = nil
+		}
+	}
 	var code ai.CodeSearcher
 	if ghApp != nil {
 		code = &github.Searcher{App: ghApp, Pool: pool}

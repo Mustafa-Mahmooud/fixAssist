@@ -254,6 +254,17 @@ type Funnel struct {
 	CreatedAt pgtype.Timestamptz
 }
 
+type GithubAppConfig struct {
+	ID              int32
+	AppID           int64
+	Slug            string
+	ClientID        string
+	ClientSecretEnc []byte
+	PrivateKeyEnc   []byte
+	HtmlUrl         pgtype.Text
+	CreatedAt       pgtype.Timestamptz
+}
+
 type Goal struct {
 	ID        int64
 	ProjectID int64

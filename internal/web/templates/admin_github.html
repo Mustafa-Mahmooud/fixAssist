@@ -1,7 +1,13 @@
 {{define "content"}}
 <p class="muted small"><a href="/admin">Admin</a> /</p>
 <h1>GitHub App</h1>
-{{with .Data.Created}}
+{{with .Data.Saved}}
+  <div class="card">
+    <p><b>The app “{{.Slug}}” was created and its keys were saved</b> (encrypted with APP_SECRET).</p>
+    <p>Restart the service once to switch it on. Founders will then see “Connect your code” on their Setup page.</p>
+    {{if .HTMLURL}}<p class="muted small">Manage it on GitHub: <a href="{{.HTMLURL}}" rel="noopener">{{.HTMLURL}}</a></p>{{end}}
+  </div>
+{{else}}{{with .Data.Created}}
   <div class="card">
     <p><b>The app “{{.Slug}}” was created.</b> Put these in the server's <code>.env</code> and redeploy. They're shown only once.</p>
     <pre>GITHUB_APP_ID={{.ID}}
@@ -24,5 +30,5 @@ GITHUB_APP_PRIVATE_KEY="{{.PEM}}"</pre>
       <p class="muted small">GitHub asks you to confirm, then sends you back here with the app's keys.</p>
     </div>
   {{end}}
-{{end}}
+{{end}}{{end}}
 {{end}}

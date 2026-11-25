@@ -91,3 +91,33 @@ func TestManifest(t *testing.T) {
 		t.Errorf("manifest = %v", m)
 	}
 }
+
+func TestManifestNameFitsGitHub(t *testing.T) {
+	var a, b map[string]any
+	_ = json.Unmarshal(Manifest("https://p01--fixit--yjtpmslhxt6q.code.run"), &a)
+	_ = json.Unmarshal(Manifest("https://fix.example.com"), &b)
+	na, nb := a["name"].(string), b["name"].(string)
+	if len(na) > 34 || !strings.HasPrefix(na, "Fix Assistant ") {
+		t.Errorf("name %q: GitHub allows at most 34 characters", na)
+	}
+	if na == nb {
+		t.Error("two deployments get the same (global) app name")
+	}
+}
+
+func TestSealOpen(t *testing.T) {
+	sealed, err := seal([]byte("secret-one-secret-one-secret-one"), []byte("-----BEGIN KEY-----"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(sealed), "BEGIN") {
+		t.Fatal("not encrypted")
+	}
+	plain, err := open([]byte("secret-one-secret-one-secret-one"), sealed)
+	if err != nil || string(plain) != "-----BEGIN KEY-----" {
+		t.Fatalf("open = %q, %v", plain, err)
+	}
+	if _, err := open([]byte("another-secret-another-secret-00"), sealed); err == nil {
+		t.Error("a different APP_SECRET decrypted it")
+	}
+}

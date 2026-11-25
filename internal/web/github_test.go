@@ -7,13 +7,17 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -154,5 +158,75 @@ func TestGitHubConnectAndCodeContext(t *testing.T) {
 	_ = json.Unmarshal(raw, &refs)
 	if len(refs) != 1 || refs[0].Path != "src/pages/Signup.tsx" {
 		t.Errorf("stored code refs = %s", raw)
+	}
+}
+
+// The manifest flow saves the new app's keys (encrypted) so a hosted
+// deployment enables code context with a restart and no copying.
+func TestAdminGitHubManifestSavesConfig(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	key, _ := rsa.GenerateKey(rand.Reader, 2048)
+	pemText := string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
+	gh := http.NewServeMux()
+	gh.HandleFunc("POST /app-manifests/{code}/conversions", func(w http.ResponseWriter, r *http.Request) {
+		if r.PathValue("code") != "one-time-code" {
+			w.WriteHeader(404)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": 4242, "slug": "fix-assistant-abc123", "client_id": "Iv1.abc",
+			"client_secret": "shh-client-secret", "pem": pemText, "html_url": "https://github.com/apps/fix-assistant-abc123"})
+	})
+	ghSrv := httptest.NewServer(gh)
+	defer ghSrv.Close()
+
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	secret := []byte("github-config-secret-github-config")
+	as := &auth.Service{Pool: f.pool, Sender: f.mail, BaseURL: srv.URL}
+	(&web.App{Pool: f.pool, Auth: as, Projects: &projects.Service{Pool: f.pool}, IngestBase: srv.URL, BaseURL: srv.URL,
+		Secret: secret, Staff: []string{"ops@example.com"}, GitHubWeb: ghSrv.URL, GitHubAPI: ghSrv.URL,
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil))}).Register(mux)
+	link, err := as.AdminLink(ctx, "ops@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := client(t)
+	resp, _ := c.PostForm(srv.URL+"/auth/magic", url.Values{"token": {reToken.FindStringSubmatch(link)[1]}})
+	body(t, resp)
+
+	// The admin page posts the manifest to GitHub with a signed state.
+	resp, _ = c.Get(srv.URL + "/admin/github")
+	b := body(t, resp)
+	m := regexp.MustCompile(`action="[^"]*/settings/apps/new\?state=([^"]+)"`).FindStringSubmatch(b)
+	if m == nil {
+		t.Fatalf("no manifest form:\n%s", b)
+	}
+	state := html.UnescapeString(m[1])
+
+	// GitHub sends the admin back with a one-time code.
+	resp, _ = c.Get(srv.URL + "/admin/github/callback?code=one-time-code&state=" + url.QueryEscape(state))
+	b = body(t, resp)
+	if !strings.Contains(b, "were saved") || strings.Contains(b, "BEGIN RSA PRIVATE KEY") || strings.Contains(b, "shh-client-secret") {
+		t.Fatalf("callback page (%d) should confirm the save and not show keys:\n%s", resp.StatusCode, b)
+	}
+	// Stored encrypted; loads back with the same APP_SECRET only.
+	var raw string
+	_ = f.pool.QueryRow(ctx, "select encode(client_secret_enc, 'escape') || encode(private_key_enc, 'escape') from github_app_config").Scan(&raw)
+	if strings.Contains(raw, "shh-client-secret") || strings.Contains(raw, "PRIVATE KEY") {
+		t.Error("secrets stored in plain text")
+	}
+	app, err := github.LoadConfig(ctx, f.pool, secret)
+	if err != nil || app == nil || app.ID != 4242 || app.Slug != "fix-assistant-abc123" || app.ClientSecret != "shh-client-secret" || app.Key.N.Cmp(key.N) != 0 {
+		t.Fatalf("LoadConfig = %+v, %v", app, err)
+	}
+	if _, err := github.LoadConfig(ctx, f.pool, []byte("a-different-app-secret-0123456789")); err == nil {
+		t.Error("loaded with the wrong APP_SECRET")
+	}
+	// A forged state is refused.
+	resp, _ = c.Get(srv.URL + "/admin/github/callback?code=one-time-code&state=forged")
+	if body(t, resp); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("forged state: %d", resp.StatusCode)
 	}
 }

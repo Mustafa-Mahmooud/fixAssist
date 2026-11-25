@@ -205,5 +205,13 @@ func (a *App) adminGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	a.render(w, 200, "admin_github", page{Title: "GitHub App", Session: sessionFrom(r), Data: map[string]any{"Created": conv}})
+	// Save the keys (encrypted) so the next start enables code context with
+	// no copying; show them only if saving fails.
+	if err := github.SaveConfig(r.Context(), a.Pool, a.Secret, conv); err != nil {
+		a.Log.Error("github app config not saved", "err", err)
+		a.render(w, 200, "admin_github", page{Title: "GitHub App", Session: sessionFrom(r), Data: map[string]any{"Created": conv}})
+		return
+	}
+	a.Log.Info("github app created and saved", "slug", conv.Slug, "app_id", conv.ID)
+	a.render(w, 200, "admin_github", page{Title: "GitHub App", Session: sessionFrom(r), Data: map[string]any{"Saved": conv}})
 }
