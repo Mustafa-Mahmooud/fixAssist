@@ -4,7 +4,8 @@
 {{with .Data.Saved}}
   <div class="card">
     <p><b>The app “{{.Slug}}” was created and its keys were saved</b> (encrypted with APP_SECRET).</p>
-    <p>Restart the service once to switch it on. Founders will then see “Connect your code” on their Setup page.</p>
+    <p>Restart the service once to switch it on. Founders will then see “Connect your code” on their Setup page, and everyone gets “Sign in with GitHub”.</p>
+    {{template "github_email_permission" .Slug}}
     {{if .HTMLURL}}<p class="muted small">Manage it on GitHub: <a href="{{.HTMLURL}}" rel="noopener">{{.HTMLURL}}</a></p>{{end}}
   </div>
 {{else}}{{with .Data.Created}}
@@ -19,7 +20,8 @@ GITHUB_APP_PRIVATE_KEY="{{.PEM}}"</pre>
   </div>
 {{else}}
   {{if .Data.Configured}}
-    <div class="card"><p>Configured: <b>{{.Data.Slug}}</b> (app id {{.Data.AppID}}). Founders can connect a repository from their Setup page.</p></div>
+    <div class="card"><p>Configured: <b>{{.Data.Slug}}</b> (app id {{.Data.AppID}}). Founders can connect a repository from their Setup page, and anyone can sign in with GitHub.</p>
+      {{template "github_email_permission" .Data.Slug}}</div>
   {{else}}
     <div class="card">
       <p>Create the GitHub App that lets fix prompts name the exact file and line. It asks founders only for <b>read-only</b> access to the repositories they choose.</p>
@@ -31,4 +33,12 @@ GITHUB_APP_PRIVATE_KEY="{{.PEM}}"</pre>
     </div>
   {{end}}
 {{end}}{{end}}
+{{end}}
+
+{{define "github_email_permission"}}
+<div class="notice">
+  <p><b>One setting on GitHub for “Sign in with GitHub”:</b> GitHub doesn't let the app ask for it when it's created.</p>
+  <p class="small">Open <a href="https://github.com/settings/apps/{{.}}/permissions" rel="noopener">the app's permissions on GitHub</a>, then <b>Account permissions → Email addresses → Read-only → Save changes</b>.
+  Without it, people can still sign in with GitHub if their profile shows a public email; with it, everyone can.</p>
+</div>
 {{end}}

@@ -271,6 +271,7 @@ func (a *App) SignIn(ctx context.Context, code, redirectURI string) (User, error
 	var u struct {
 		ID    int64  `json:"id"`
 		Login string `json:"login"`
+		Email string `json:"email"` // the public profile email, if any
 	}
 	if err := a.do(ctx, "GET", a.api()+"/user", "Bearer "+token, nil, &u); err != nil {
 		return User{}, err
@@ -283,10 +284,20 @@ func (a *App) SignIn(ctx context.Context, code, redirectURI string) (User, error
 		Primary  bool   `json:"primary"`
 		Verified bool   `json:"verified"`
 	}
-	if err := a.do(ctx, "GET", a.api()+"/user/emails", "Bearer "+token, nil, &emails); err != nil {
-		return User{}, err
-	}
 	out := User{ID: u.ID, Login: u.Login}
+	if err := a.do(ctx, "GET", a.api()+"/user/emails", "Bearer "+token, nil, &emails); err != nil {
+		// Without the app's "Email addresses" permission GitHub answers 403
+		// (or 404). The public profile email is then used: GitHub only lets
+		// people make a verified address public.
+		if !strings.Contains(err.Error(), ": 403") && !strings.Contains(err.Error(), ": 404") {
+			return User{}, err
+		}
+		if u.Email == "" || strings.HasSuffix(strings.ToLower(u.Email), "@users.noreply.github.com") {
+			return User{}, ErrNoVerifiedEmail
+		}
+		out.Email = u.Email
+		return out, nil
+	}
 	for _, e := range emails {
 		if e.Verified && (e.Primary || out.Email == "") && !strings.HasSuffix(strings.ToLower(e.Email), "@users.noreply.github.com") {
 			out.Email = e.Email
@@ -357,9 +368,12 @@ func Manifest(baseURL string) []byte {
 		"request_oauth_on_install": true,
 		"public":                   true,
 		"hook_attributes":          map[string]any{"url": base + "/github/webhook", "active": false},
-		// Read-only: repository contents (code context), and the user's email
-		// addresses for "Sign in with GitHub".
-		"default_permissions": map[string]string{"contents": "read", "metadata": "read", "email_addresses": "read"},
+		// Read-only repository contents (code context). GitHub rejects account
+		// permissions such as "email_addresses" in a manifest ("Default
+		// permission records resource is not included in the list"); the
+		// admin page asks to enable it after creating the app, for Sign in
+		// with GitHub. Until then, sign-in uses the public profile email.
+		"default_permissions": map[string]string{"contents": "read", "metadata": "read"},
 		"default_events":      []string{},
 	}
 	b, _ := json.Marshal(m)

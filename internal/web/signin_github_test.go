@@ -35,12 +35,23 @@ func fakeGitHubOAuth(t *testing.T) *httptest.Server {
 		id, email, _ := strings.Cut(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer tok-"), "-")
 		return id, email
 	}
+	// "noperm:<email>": the app lacks the Email addresses permission (/user/emails
+	// answers 403) and <email> is the public profile email ("" = private).
 	mux.HandleFunc("GET /user", func(w http.ResponseWriter, r *http.Request) {
-		id, _ := who(r)
-		fmt.Fprintf(w, `{"id":%s,"login":"user%s"}`, id, id)
+		id, email := who(r)
+		public := ""
+		if p, ok := strings.CutPrefix(email, "noperm:"); ok {
+			public = p
+		}
+		fmt.Fprintf(w, `{"id":%s,"login":"user%s","email":%q}`, id, id, public)
 	})
 	mux.HandleFunc("GET /user/emails", func(w http.ResponseWriter, r *http.Request) {
 		_, email := who(r)
+		if strings.HasPrefix(email, "noperm:") {
+			w.WriteHeader(403)
+			fmt.Fprint(w, `{"message":"Resource not accessible by integration"}`)
+			return
+		}
 		if email == "none" {
 			fmt.Fprint(w, `[{"email":"x@example.com","primary":true,"verified":false},{"email":"1+u@users.noreply.github.com","primary":false,"verified":true}]`)
 			return
@@ -147,6 +158,19 @@ func TestSignInWithGitHub(t *testing.T) {
 	}
 	if id, _ := userOf("x@example.com"); id != 0 {
 		t.Error("an account was made from an unverified email")
+	}
+	// Without the Email addresses permission: the public profile email works,
+	// a private one gets a clear message.
+	resp, _ = signIn(client(t), "444-noperm:Public@Example.com")
+	if b := body(t, resp); resp.Request.URL.Path != "/projects" || !strings.Contains(b, "Welcome to Fix Assistant") {
+		t.Errorf("public email without permission: %s (%d)", resp.Request.URL, resp.StatusCode)
+	}
+	if id, gid := userOf("public@example.com"); id == 0 || gid != 444 {
+		t.Errorf("public-email account = %d, github %d", id, gid)
+	}
+	resp, _ = signIn(client(t), "333-noperm:")
+	if b := body(t, resp); !strings.Contains(b, "no verified email") {
+		t.Errorf("private email without permission: %d", resp.StatusCode)
 	}
 	// Cancelled on GitHub.
 	resp, _ = client(t).Get(srv.URL + "/auth/github/callback?error=access_denied&state=x")
