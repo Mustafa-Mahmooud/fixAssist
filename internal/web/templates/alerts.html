@@ -1,6 +1,7 @@
 {{define "content"}}
 {{template "project_nav" .}}
 <p class="muted">Instant alerts go out when an explained issue hurts people on a key page (or comes back after a fix); everything else is in the 09:00 daily summary. Every alert is listed here, emailed or not.</p>
+<div id="alerts-live" data-live="30">
 {{if .Data.Alerts}}
 <div class="card table-wrap">
   <table class="issues">
@@ -8,17 +9,22 @@
     <tbody>
     {{$id := .Data.Project.ID}}
     {{range .Data.Alerts}}
-      <tr>
+      <tr data-key="a{{.ID}}"{{if .IssueID.Valid}} data-href="/projects/{{$id}}/issues/{{.IssueID.Int64}}"{{end}}>
         <td>{{if .IssueID.Valid}}<a class="title" href="/projects/{{$id}}/issues/{{.IssueID.Int64}}">{{.Subject}}</a>{{else}}<span class="title">{{.Subject}}</span>{{end}}</td>
-        <td>{{if eq .Kind "instant"}}Instant{{else}}Daily summary{{end}}</td>
+        <td>{{if eq .Kind "instant"}}<span class="badge open">Instant</span>{{else}}<span class="badge ignored">Daily summary</span>{{end}}</td>
         <td>{{if .EmailedTo}}{{range $n, $e := .EmailedTo}}{{if $n}}, {{end}}{{$e}}{{end}}{{else}}<span class="muted">not emailed (email is off)</span>{{end}}</td>
-        <td class="num">{{ago .SentAt.Time}}</td>
+        <td class="num muted">{{ago .SentAt.Time}}</td>
       </tr>
     {{end}}
     </tbody>
   </table>
 </div>
 {{else}}
-<div class="card empty">No alerts yet.</div>
+<div class="card empty">
+  <i class="ico ico-alerts"></i>
+  <b>No alerts yet</b>
+  When something important breaks, we email you and list it here.
+</div>
 {{end}}
+</div>
 {{end}}

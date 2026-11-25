@@ -1,18 +1,18 @@
 {{define "content"}}
-<h1>Fix Assistant</h1>
+<h1><span class="logo" aria-hidden="true">FA</span>Fix Assistant</h1>
 {{if .Data.Sent}}
   <div class="card">
-    <p><b>Check your email.</b></p>
-    <p class="muted">We sent a sign-in link to {{.Data.Email}}. It works once and expires in 15 minutes.</p>
+    <p class="status-line"><span class="dot ok"></span><b>Check your email.</b></p>
+    <p class="muted">We sent a sign-in link to <b>{{.Data.Email}}</b>. It works once and expires in 15 minutes. Can't find it? Look in your spam folder.</p>
   </div>
-  <p class="small"><a href="/login">Use a different email</a></p>
+  <p class="small"><a href="/login">← Use a different email</a></p>
 {{else}}
-  <p class="muted">Plain-language fixes for the errors in your app. Sign in, or create an account, in one step.</p>
-  {{if .Error}}<p class="flash error">{{.Error}}</p>{{end}}
+  <p class="muted">Plain-language fixes for the errors in your app. Sign in, or create an account, in one step. No password needed.</p>
+  {{if .Error}}<p class="flash error" role="alert">{{.Error}}</p>{{end}}
   {{if .Data.GitHub}}
   <div class="card">
     <a class="button github" href="/auth/github">Sign in with GitHub</a>
-    <p class="muted small">We only read your GitHub name and verified email. No access to your code unless you connect a repository later.</p>
+    <p class="muted small" style="margin-bottom:0">We only read your GitHub name and verified email. No access to your code unless you connect a repository later.</p>
   </div>
   {{end}}
   {{if .Data.EmailOff}}
@@ -23,9 +23,10 @@
   {{else}}
     {{if .Data.GitHub}}<p class="muted small or">or with your email</p>{{end}}
     <form method="post" action="/login" class="card">
-      <label for="email">Email</label>
-      <input id="email" type="email" name="email" value="{{.Data.Email}}" autocomplete="email" required{{if not .Data.GitHub}} autofocus{{end}}>
-      <p><button type="submit">Email me a sign-in link</button></p>
+      <label for="email" style="margin-top:0">Email</label>
+      <input id="email" type="email" name="email" value="{{.Data.Email}}" autocomplete="email" placeholder="you@example.com" required{{if not .Data.GitHub}} autofocus{{end}}>
+      <p class="muted small">We'll email you a link. Click it to sign in.</p>
+      <p style="margin-bottom:0"><button type="submit" data-busy="Sending…">Email me a sign-in link</button></p>
     </form>
   {{end}}
 {{end}}

@@ -3,20 +3,21 @@
 {{template "range_tabs" .}}
 {{$p := .Data.Project}}{{$csrf := .Session.CSRF}}
 
+<div id="funnels-live" data-live="60">
 {{range .Data.Funnels}}
 <div class="card">
   <div class="row spread">
     <h2 style="margin:0">{{.Name}}</h2>
-    <form method="post" action="/projects/{{$p.ID}}/funnels/{{.ID}}/delete"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="link">Delete</button></form>
+    <form method="post" action="/projects/{{$p.ID}}/funnels/{{.ID}}/delete" data-confirm="Delete the funnel “{{.Name}}”?" data-confirm-text="Only the funnel is removed; your visitor data stays." data-confirm-ok="Delete"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="link danger">Delete</button></form>
   </div>
-  {{if .Overall}}<p class="muted">{{.Overall}} of people who start finish.</p>{{end}}
+  {{if .Overall}}<p class="muted"><b data-key="o{{.ID}}">{{.Overall}}</b> of people who start finish.</p>{{end}}
   {{range $i, $s := .Steps}}
   <div class="funnel-step">
     <div class="row spread">
       <span><b>{{inc $i}}. {{.Label}}</b></span>
-      <span class="muted small">{{.Sessions}} sessions{{if .FromPrev}} · {{.FromPrev}} from the step before{{end}}</span>
+      <span class="muted small"><span data-n>{{.Sessions}}</span> sessions{{if .FromPrev}} · {{.FromPrev}} from the step before{{end}}</span>
     </div>
-    <div class="funnel-bar"><span style="width: {{.BarPct}}%"></span></div>
+    <div class="funnel-bar" role="presentation"><span style="width: {{.BarPct}}%"></span></div>
     <p class="muted small">Phone {{.Mobile}} · Computer {{.Desktop}}{{if .DropPct}} · <b>{{.DropPct}} left here</b>{{end}}</p>
     {{range .Issues}}
       <p class="flash error small">This step has an open problem: <a href="/projects/{{$p.ID}}/issues/{{.ID}}">{{.Title}}</a> ({{.UserCount}} people). Fixing it may stop people leaving here.</p>
@@ -26,7 +27,7 @@
 </div>
 {{else}}
 <div class="card">
-  <h2 style="margin-top:0">See where people drop off</h2>
+  <h2>See where people drop off</h2>
   <p class="muted">A funnel is the path you want visitors to take, like landing page → pricing → sign-up. Each step shows how many people made it, and any errors on that step.</p>
   {{if .Data.Suggestion}}
   <form method="post" action="/projects/{{$p.ID}}/funnels" class="row">
@@ -34,55 +35,59 @@
     <input type="hidden" name="name" value="Visit to sign-up">
     <input type="hidden" name="steps_json" value="{{.Data.SuggestionJSON}}">
     <span>Suggested from your traffic: <b>{{.Data.Suggestion}}</b></span>
-    <button type="submit">Create this funnel</button>
+    <button type="submit" data-busy="Creating…"><i class="ico ico-plus"></i>Create this funnel</button>
   </form>
+  {{else}}
+  <p class="muted small">Once your app has some visits, we'll suggest one for you here. You can also build your own below.</p>
   {{end}}
 </div>
 {{end}}
+</div>
 
 <details class="card">
-  <summary>Build your own funnel</summary>
+  <summary><b>Build your own funnel</b></summary>
   <form method="post" action="/projects/{{$p.ID}}/funnels">
     <input type="hidden" name="csrf" value="{{$csrf}}">
     <label for="fname">Name</label>
     <input id="fname" type="text" name="name" placeholder="Pricing to sign-up" maxlength="80">
+    <p class="muted small">Fill in the steps in order. Leave the ones you don't need empty.</p>
     {{range (list "1" "2" "3" "4")}}
     <div class="grid">
       <div>
-        <label>Step {{.}}</label>
-        <select name="step_kind">
+        <label for="sk{{.}}">Step {{.}}</label>
+        <select id="sk{{.}}" name="step_kind">
           <option value="page">Visits page</option>
           <option value="click">Clicks button</option>
           <option value="event">Custom event</option>
           <option value="signup">Signs up</option>
         </select>
       </div>
-      <div><label>&nbsp;</label><input type="text" name="step_match" placeholder="/pricing, Get started, video_played…"></div>
+      <div><label for="sm{{.}}"><span class="muted small">Which page, button or event</span></label><input id="sm{{.}}" type="text" name="step_match" placeholder="/pricing, Get started, video_played…"></div>
     </div>
     {{end}}
-    <p><button type="submit">Create funnel</button></p>
+    <p style="margin-top:1rem"><button type="submit" data-busy="Creating…">Create funnel</button></p>
   </form>
 </details>
 
 <h2>Goals</h2>
-<div class="card table-wrap">
+<div class="card table-wrap" id="goals-live" data-live="60">
   <table>
-    <thead><tr><th>Goal</th><th>What counts</th><th class="num">Conversions</th><th class="num">Of visitors</th><th></th></tr></thead>
+    <thead><tr><th>Goal</th><th>What counts</th><th class="num">Conversions</th><th class="num"><span class="hint" title="Out of all visitors, how many reached this goal">Of visitors</span></th><th></th></tr></thead>
     <tbody>
     {{range .Data.Goals}}
       <tr>
         <td>{{.Name}}{{if .IsLead}} <span class="badge explained">lead</span>{{end}}</td>
         <td class="muted">{{if eq .Kind "signup"}}Automatic: successful sign-ups{{else}}{{.Kind}}: <code>{{.Match}}</code>{{end}}</td>
-        <td class="num">{{.Conversions}}</td>
+        <td class="num" data-n data-key="g{{.ID}}">{{.Conversions}}</td>
         <td class="num">{{.Rate}}</td>
-        <td class="num">{{if ne .Kind "signup"}}<form method="post" action="/projects/{{$p.ID}}/goals/{{.ID}}/delete"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="link">Delete</button></form>{{end}}</td>
+        <td class="num">{{if ne .Kind "signup"}}<form method="post" action="/projects/{{$p.ID}}/goals/{{.ID}}/delete" data-confirm="Delete the goal “{{.Name}}”?" data-confirm-ok="Delete"><input type="hidden" name="csrf" value="{{$csrf}}"><button class="link danger">Delete</button></form>{{end}}</td>
       </tr>
     {{else}}<tr><td colspan="5" class="muted">Sign-ups appear here automatically once your app has visitors.</td></tr>{{end}}
     </tbody>
   </table>
 </div>
 <details class="card">
-  <summary>Add a goal (a lead form, a purchase page, a button)</summary>
+  <summary><b>Add a goal</b> <span class="muted">(a lead form, a purchase page, a button)</span></summary>
   <form method="post" action="/projects/{{$p.ID}}/goals">
     <input type="hidden" name="csrf" value="{{$csrf}}">
     <div class="grid">
@@ -91,8 +96,8 @@
         <select id="gkind" name="kind"><option value="page">visits a page</option><option value="click">clicks a button</option><option value="event">sends a custom event</option></select></div>
       <div><label for="gmatch">Page, button text or event name</label><input id="gmatch" type="text" name="match" required placeholder="/thank-you"></div>
     </div>
-    <label><input type="checkbox" name="is_lead"> This is a lead</label>
-    <p><button type="submit">Add goal</button></p>
+    <label><input type="checkbox" name="is_lead"> This is a lead <span class="muted small">(someone who may become a customer)</span></label>
+    <p><button type="submit" data-busy="Adding…">Add goal</button></p>
   </form>
 </details>
 {{end}}

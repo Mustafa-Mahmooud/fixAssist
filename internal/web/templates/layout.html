@@ -3,22 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>{{.Title}} · Fix Assistant</title>
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js" defer></script>
   <script src="/static/app.js" defer></script>
 </head>
 <body{{if .Session}} hx-headers='{"X-CSRF-Token": "{{.Session.CSRF}}"}'{{end}}>
+<div id="progress" aria-hidden="true"></div>
+<a class="skip" href="#main">Skip to content</a>
 {{if .Session}}
   <header class="top">
-    <a class="brand" href="/projects">Fix Assistant</a>
-    <nav><a href="/projects">Projects</a>{{if .Session.Staff}}<a href="/admin">Admin</a>{{end}}</nav>
-    <span class="muted small">{{.Session.Email}}</span>
-    <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.Session.CSRF}}"><button class="link">Sign out</button></form>
+    <a class="brand" href="/projects"><span class="logo" aria-hidden="true">FA</span><span class="brand-text">Fix Assistant</span></a>
+    <nav><a href="/projects">My apps</a>{{if .Session.Staff}}<a href="/admin">Admin</a>{{end}}</nav>
+    <button type="button" id="live-pill" class="live-pill" hidden title="This page updates by itself. Click to update now."><span class="dot"></span><span class="label">Live</span></button>
+    <div class="who">
+      <span class="avatar" aria-hidden="true">{{initial .Session.Email}}</span>
+      <span class="muted small email" title="{{.Session.Email}}">{{.Session.Email}}</span>
+      <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.Session.CSRF}}"><button class="link small">Sign out</button></form>
+    </div>
   </header>
-  <main>{{template "content" .}}</main>
+  <main id="main">{{template "content" .}}</main>
 {{else}}
-  <main class="narrow">{{template "content" .}}</main>
+  <main id="main" class="narrow">{{template "content" .}}</main>
 {{end}}
 <footer class="site muted small"><a href="/privacy">Privacy</a></footer>
 </body>

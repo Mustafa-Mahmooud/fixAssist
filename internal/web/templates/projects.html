@@ -1,26 +1,29 @@
 {{define "content"}}
-<h1>Projects</h1>
-<p class="muted">{{.Session.OrgName}}</p>
+<div class="row spread">
+  <div>
+    <h1>My apps</h1>
+    <p class="muted" style="margin:0">{{.Session.OrgName}}</p>
+  </div>
+  {{if .Data.Projects}}<a class="button secondary" href="#add-app"><i class="ico ico-plus"></i>Add an app</a>{{end}}
+</div>
 {{if .Error}}<p class="flash error">{{.Error}}</p>{{end}}
 {{if .Data.Projects}}
-<div class="card table-wrap">
-  <table>
-    <thead><tr><th>App</th><th>AI agent</th><th>Backend</th><th class="num">Open issues</th><th></th></tr></thead>
-    <tbody>
-    {{range .Data.Projects}}
-      <tr>
-        <td><a class="title" href="/projects/{{.ID}}/issues">{{.Name}}</a></td>
-        <td>{{agentName .TargetAgent}}</td>
-        <td>{{backendName .Backend}}</td>
-        <td class="num">{{.OpenIssues}}</td>
-        <td class="num"><a href="/projects/{{.ID}}/setup">Setup</a></td>
-      </tr>
+<div class="project-cards" id="project-list" data-live="30">
+  {{range .Data.Projects}}
+  <div class="project-card" data-href="/projects/{{.ID}}/issues">
+    <a class="name" href="/projects/{{.ID}}/issues">{{.Name}}</a>
+    <span class="muted small">Built with {{agentName .TargetAgent}} · {{backendName .Backend}}</span>
+    {{if .OpenIssues}}
+      <span class="health bad" data-key="h{{.ID}}"><i class="ico ico-issues"></i><span data-n>{{.OpenIssues}}</span> open {{if eq .OpenIssues 1}}issue{{else}}issues{{end}}</span>
+    {{else}}
+      <span class="health ok" data-key="h{{.ID}}"><i class="ico ico-ok"></i>No open issues</span>
     {{end}}
-    </tbody>
-  </table>
+    <span class="links"><a href="/projects/{{.ID}}/issues">See issues</a><a href="/projects/{{.ID}}/overview">Visitors</a><a href="/projects/{{.ID}}/setup">Setup</a></span>
+  </div>
+  {{end}}
 </div>
 {{end}}
-<h2>{{if .Data.Projects}}Add another app{{else}}Connect your first app{{end}}</h2>
+<h2 id="add-app">{{if .Data.Projects}}Add another app{{else}}Connect your first app{{end}}</h2>
 {{template "new_project_form" .}}
 {{if .Session.TipsHidden}}
 <form method="post" action="/settings/tips" class="muted small"><input type="hidden" name="csrf" value="{{.Session.CSRF}}"><input type="hidden" name="show" value="1">Page tips are hidden. <button class="link">Show them again</button></form>

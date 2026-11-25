@@ -65,6 +65,40 @@ var funcs = template.FuncMap{
 		}
 		return "Partly"
 	},
+	// pct is a/b as a whole percentage, for progress bars.
+	"pct": func(a, b any) int64 {
+		if d := toInt64(b); d > 0 {
+			return min(100, toInt64(a)*100/d)
+		}
+		return 0
+	},
+	// statusHelp explains an issue status in plain words (badge tooltips).
+	"statusHelp": func(s string) string {
+		switch s {
+		case "new":
+			return "Just appeared. It will be explained automatically soon."
+		case "explained":
+			return "Explained, with a fix message ready to copy."
+		case "verifying":
+			return "You applied a fix; we're checking that the error stopped."
+		case "fixed":
+			return "Confirmed: it hasn't happened since the fix."
+		case "open":
+			return "Still happening, or it came back after a fix."
+		case "ignored":
+			return "You chose to ignore this one."
+		case "analysis_failed":
+			return "We couldn't explain it automatically. Try Explain now."
+		}
+		return ""
+	},
+	// initial is the first letter of an email, for the avatar in the header.
+	"initial": func(s string) string {
+		for _, r := range s {
+			return strings.ToUpper(string(r))
+		}
+		return "?"
+	},
 	"agentName":   agentName,
 	"tipFor":      tipFor,
 	"backendName": backendName,

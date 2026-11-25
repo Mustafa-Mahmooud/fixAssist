@@ -1,19 +1,20 @@
 {{define "project_nav"}}
-<div class="row spread">
+<div class="project-head">
   <div>
-    <p class="muted small"><a href="/projects">Projects</a> /</p>
+    <p class="crumbs muted small"><a href="/projects">My apps</a> /</p>
     <h1>{{.Data.Project.Name}}</h1>
   </div>
-  <nav class="tabs">
-    <a class="{{if eq .Title "Overview"}}on{{end}}" href="/projects/{{.Data.Project.ID}}/overview">Overview</a>
-    <a class="{{if eq .Title "Issues"}}on{{end}}" href="/projects/{{.Data.Project.ID}}/issues">Issues</a>
-    <a class="{{if eq .Title "Pages"}}on{{end}}" href="/projects/{{.Data.Project.ID}}/pages">Pages</a>
-    <a class="{{if eq .Title "Funnels"}}on{{end}}" href="/projects/{{.Data.Project.ID}}/funnels">Funnels</a>
-    <a class="{{if eq .Title "Insights"}}on{{end}}" href="/projects/{{.Data.Project.ID}}/insights">Insights</a>
-    <a class="{{if eq .Title "Alerts"}}on{{end}}" href="/projects/{{.Data.Project.ID}}/alerts">Alerts</a>
-    <a class="{{if eq .Title "Setup"}}on{{end}}" href="/projects/{{.Data.Project.ID}}/setup">Setup</a>
-  </nav>
 </div>
+<nav class="tabs main-tabs" aria-label="Project sections">
+  {{$id := .Data.Project.ID}}
+  <a class="{{if eq .Title "Overview"}}on{{end}}" href="/projects/{{$id}}/overview"><i class="ico ico-overview"></i>Overview</a>
+  <a class="{{if or (eq .Title "Issues") (eq .Title "Issue")}}on{{end}}" href="/projects/{{$id}}/issues"><i class="ico ico-issues"></i>Issues</a>
+  <a class="{{if eq .Title "Pages"}}on{{end}}" href="/projects/{{$id}}/pages"><i class="ico ico-pages"></i>Pages</a>
+  <a class="{{if eq .Title "Funnels"}}on{{end}}" href="/projects/{{$id}}/funnels"><i class="ico ico-funnels"></i>Funnels</a>
+  <a class="{{if eq .Title "Insights"}}on{{end}}" href="/projects/{{$id}}/insights"><i class="ico ico-insights"></i>Insights</a>
+  <a class="{{if eq .Title "Alerts"}}on{{end}}" href="/projects/{{$id}}/alerts"><i class="ico ico-alerts"></i>Alerts</a>
+  <a class="{{if eq .Title "Setup"}}on{{end}}" href="/projects/{{$id}}/setup"><i class="ico ico-setup"></i>Setup</a>
+</nav>
 {{template "onboarding" .}}
 {{template "page_tip" .}}
 {{end}}
@@ -21,39 +22,52 @@
 {{define "setup_status"}}
 <div id="setup-status"{{if not .Connected}} hx-get="/projects/{{.ProjectID}}/setup/status" hx-trigger="every 3s" hx-swap="outerHTML"{{end}}>
   {{if .Connected}}
-    <p class="status-line"><span class="dot ok"></span><b>Connected.</b> In the last 30 days: {{.PageViews}} page views and {{.Events}} errors{{if .ServerEvents}} ({{.ServerEvents}} from your server){{end}}. Latest {{ago .LastEventAt}}.</p>
-    <p><a class="button" href="/projects/{{.ProjectID}}/issues">See issues</a></p>
+    <p class="status-line flash good"><span class="dot ok"></span><span><b>Connected.</b> In the last 30 days: {{.PageViews}} page views and {{.Events}} errors{{if .ServerEvents}} ({{.ServerEvents}} from your server){{end}}. Latest {{ago .LastEventAt}}.</span></p>
+    <p><a class="button" href="/projects/{{.ProjectID}}/issues">See issues <i class="ico ico-arrow"></i></a></p>
   {{else}}
-    <p class="status-line"><span class="dot"></span>Waiting for the first event…</p>
+    <p class="status-line"><span class="dot"></span><span>Waiting for the first event… <span class="muted small">This updates by itself, no need to refresh.</span></span></p>
   {{end}}
 </div>
 {{end}}
 
 {{define "issues_table"}}
-<div id="issues">
+<div id="issues" data-live="15">
 {{if .Issues}}
+<p class="muted small">{{len .Issues}} {{if eq (len .Issues) 1}}issue{{else}}issues{{end}}, the ones hurting the most people first. Click one to see what broke and how to fix it.</p>
 <div class="card table-wrap">
   <table class="issues">
-    <thead><tr><th>Issue</th><th class="num">People</th><th class="num">Times</th><th>Page</th><th>Status</th><th class="num">Last seen</th></tr></thead>
+    <thead><tr>
+      <th data-sort="text" tabindex="0">Problem</th>
+      <th class="num" data-sort="num" tabindex="0"><span class="hint" title="How many different visitors ran into this">People</span></th>
+      <th class="num" data-sort="num" tabindex="0"><span class="hint" title="How many times it happened in total">Times</span></th>
+      <th data-sort="text" tabindex="0">Page</th><th data-sort="text" tabindex="0">Status</th><th class="num">Last seen</th>
+    </tr></thead>
     <tbody>
     {{$id := .Project.ID}}
     {{range .Issues}}
-      <tr>
+      <tr data-href="/projects/{{$id}}/issues/{{.ID}}" data-key="row{{.ID}}">
         <td><span class="kind">{{kindName .Kind}}</span><br><a class="title" href="/projects/{{$id}}/issues/{{.ID}}">{{.Title}}</a></td>
-        <td class="num" data-label="{{if eq .UserCount 1}}person{{else}}people{{end}}">{{.UserCount}}</td>
-        <td class="num" data-label="{{if eq .EventCount 1}}time{{else}}times{{end}}">{{.EventCount}}</td>
-        <td><code>{{or .Route.String "—"}}</code></td>
-        <td><span class="badge {{.Status}}">{{statusName .Status}}</span></td>
-        <td class="num">{{ago .LastSeenAt.Time}}</td>
+        <td class="num" data-label="{{if eq .UserCount 1}}person{{else}}people{{end}}"><span data-key="u{{.ID}}" data-n>{{.UserCount}}</span></td>
+        <td class="num" data-label="{{if eq .EventCount 1}}time{{else}}times{{end}}"><span data-key="e{{.ID}}" data-n>{{.EventCount}}</span></td>
+        <td>{{if .Route.String}}<code>{{.Route.String}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
+        <td><span class="badge {{.Status}}" title="{{statusHelp .Status}}" data-key="s{{.ID}}">{{statusName .Status}}</span></td>
+        <td class="num muted">{{ago .LastSeenAt.Time}}</td>
       </tr>
     {{end}}
     </tbody>
   </table>
 </div>
 {{else}}
-<div class="card empty">
-  {{if eq .Status "active"}}No open issues. <a href="/projects/{{.Project.ID}}/setup">Check the setup</a> if you expected some.{{else}}Nothing here.{{end}}
-</div>
+  {{if eq .Status "active"}}
+  <div class="card empty good">
+    <i class="ico ico-ok"></i>
+    <b>No open problems right now</b>
+    Your visitors aren't hitting any errors. New ones appear here by themselves.
+    <p class="small"><a href="/projects/{{.Project.ID}}/setup">Check the setup</a> if you expected some.</p>
+  </div>
+  {{else}}
+  <div class="card empty"><i class="ico ico-issues"></i>Nothing here.</div>
+  {{end}}
 {{end}}
 </div>
 {{end}}
@@ -68,17 +82,17 @@
 {{define "new_project_form"}}
 <form method="post" action="/projects" class="card">
   <input type="hidden" name="csrf" value="{{.Session.CSRF}}">
-  <label for="name">App name</label>
+  <label for="name">What's your app called?</label>
   <input id="name" type="text" name="name" required maxlength="80" placeholder="My booking app">
   <div class="grid">
     <div>
-      <label for="agent">Built with</label>
+      <label for="agent">What did you build it with?</label>
       <select id="agent" name="agent">
         {{range .Data.Agents}}<option value="{{.}}">{{agentName .}}</option>{{end}}
       </select>
     </div>
     <div>
-      <label for="backend">Backend</label>
+      <label for="backend">Where is its data stored? <span class="muted small">(pick "not sure" if unsure)</span></label>
       <select id="backend" name="backend">
         <option value="supabase">Supabase</option>
         <option value="firebase">Firebase</option>
@@ -86,9 +100,9 @@
       </select>
     </div>
   </div>
-  <label for="domains">Your app's domain <span class="muted small">(optional; events from other sites are rejected)</span></label>
+  <label for="domains">Your app's web address <span class="muted small">(optional; events from other sites are rejected)</span></label>
   <input id="domains" type="text" name="domains" placeholder="myapp.lovable.app">
-  <p><button type="submit">Create and get install steps</button></p>
+  <p style="margin-top:1.1rem"><button type="submit" class="big" data-busy="Creating…">Create and get install steps <i class="ico ico-arrow"></i></button></p>
 </form>
 {{end}}
 
@@ -97,7 +111,8 @@
 <details class="card onboarding"{{if not .CoreDone}} open{{end}}>
   <summary>
     {{if .CoreDone}}<b>You're set up.</b> <span class="muted">A few optional extras</span>
-    {{else}}<b>Getting started</b> <span class="muted">· {{.Done}} of {{.Of}} done</span>{{end}}
+    {{else}}<b>Getting started</b> <span class="muted">· {{.Done}} of {{.Of}} done</span>
+      <span class="meter" aria-hidden="true"><span style="width: {{pct .Done .Of}}%"></span></span>{{end}}
   </summary>
   <ol class="steps">
     {{range .Steps}}
@@ -108,7 +123,7 @@
         {{if not .Done}}
         <p class="small">{{.Text}}</p>
         {{with .Code}}<pre class="small">{{.}}</pre>{{end}}
-        {{if .Link}}<p class="small"><a href="{{.Link}}">{{.LinkText}}</a></p>{{end}}
+        {{if .Link}}<p class="small"><a href="{{.Link}}">{{.LinkText}} <i class="ico ico-arrow"></i></a></p>{{end}}
         {{end}}
       </div>
     </li>
@@ -125,7 +140,7 @@
 {{define "page_tip"}}
 {{if and .Session (not .Session.TipsHidden)}}{{with tipFor .Title}}
 <div class="tip">
-  <p class="small"><b>What this page shows:</b> {{.}}</p>
+  <p class="small"><i class="ico ico-help"></i><span><b>What this page shows:</b> {{.}}</span></p>
   <form method="post" action="/settings/tips"><input type="hidden" name="csrf" value="{{$.Session.CSRF}}"><button class="link small">Hide tips</button></form>
 </div>
 {{end}}{{end}}

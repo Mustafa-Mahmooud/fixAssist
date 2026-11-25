@@ -1,9 +1,15 @@
 {{define "content"}}
 {{template "project_nav" .}}
-<nav class="tabs">
-  {{$cur := .Data.Status}}{{$id := .Data.Project.ID}}
-  {{range .Data.Tabs}}<a class="{{if eq .Value $cur}}on{{end}}" href="/projects/{{$id}}/issues?status={{.Value}}"
-     hx-get="/projects/{{$id}}/issues?status={{.Value}}" hx-target="#issues" hx-select="#issues" hx-swap="outerHTML" hx-push-url="true">{{.Label}}</a>{{end}}
-</nav>
+<div class="toolbar">
+  <nav class="tabs" aria-label="Filter issues">
+    {{$cur := .Data.Status}}{{$id := .Data.Project.ID}}
+    {{range .Data.Tabs}}<a class="{{if eq .Value $cur}}on{{end}}" href="/projects/{{$id}}/issues?status={{.Value}}"
+       hx-get="/projects/{{$id}}/issues?status={{.Value}}" hx-target="#issues" hx-select="#issues" hx-swap="outerHTML" hx-push-url="true">{{.Label}}</a>{{end}}
+  </nav>
+  <label class="search" style="margin:0">
+    <span class="ico ico-search" aria-hidden="true"></span>
+    <input type="text" data-filter="#issues" placeholder="Search issues or pages…" aria-label="Search issues" autocomplete="off">
+  </label>
+</div>
 {{template "issues_table" .Data}}
 {{end}}

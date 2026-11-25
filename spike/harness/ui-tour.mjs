@@ -37,7 +37,7 @@ async function signup(browser) {
   await page.goto(latestLink());
   await page.click("button[type=submit]");
   await page.waitForURL(/\/projects$/);
-  if (!(await page.locator(`a.title:has-text("${PROJECT}")`).count())) {
+  if (!(await page.locator(`.project-card a.name:has-text("${PROJECT}")`).count())) {
     await page.screenshot({ path: join(OUT, "02-projects-empty.png"), fullPage: true });
     await page.fill("#name", PROJECT);
     await page.selectOption("#agent", "lovable");
@@ -45,7 +45,7 @@ async function signup(browser) {
     await page.fill("#domains", "localhost");
     await page.click("form[action='/projects'] button[type=submit]");
   } else {
-    await page.click(`tr:has-text("${PROJECT}") a:has-text("Setup")`);
+    await page.click(`.project-card:has-text("${PROJECT}") a:has-text("Setup")`);
   }
   await page.waitForURL(/\/setup$/);
   await page.screenshot({ path: join(OUT, "03-setup-waiting.png"), fullPage: true });
@@ -61,14 +61,14 @@ async function screens(browser) {
   const page = await ctx.newPage();
   await page.goto(`${APP}/projects`);
   await page.screenshot({ path: join(OUT, "04-projects.png"), fullPage: true });
-  await page.click(`tr:has-text("${PROJECT}") a:has-text("Setup")`);
+  await page.click(`.project-card:has-text("${PROJECT}") a:has-text("Setup")`);
   await page.waitForSelector("text=Connected.");
   await page.screenshot({ path: join(OUT, "05-setup-connected.png"), fullPage: true });
   await page.click(".tabs a:has-text('Issues')");
   await page.waitForSelector("#issues");
   await page.screenshot({ path: join(OUT, "06-issues.png"), fullPage: true });
   await page.click("#issues a.title:has-text(\"profiles\") >> nth=0");
-  await page.waitForSelector("text=Details for reviewers");
+  await page.waitForSelector("text=Technical details");
   if (await page.locator("button:has-text(\"Explain now\")").count()) {
     await page.click("button:has-text(\"Explain now\")");
     await page.waitForSelector("text=Fix it with");
@@ -95,7 +95,7 @@ async function analyticsScreens(browser) {
   const ctx = await browser.newContext({ storageState: STATE });
   const page = await ctx.newPage();
   await page.goto(`${APP}/projects`);
-  await page.click(`tr:has-text("${PROJECT}") a.title`);
+  await page.click(`.project-card:has-text("${PROJECT}") a.name`);
   const base = page.url().replace(/\/issues.*$/, "");
   await page.goto(`${base}/funnels`);
   if (await page.locator("button:has-text('Create this funnel')").count()) {

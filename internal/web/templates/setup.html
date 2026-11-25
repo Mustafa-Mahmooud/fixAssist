@@ -1,28 +1,43 @@
 {{define "content"}}
 {{template "project_nav" .}}
-<div class="card">
-  <h2 style="margin-top:0">1. Ask {{agentName .Data.Project.TargetAgent}} to install it</h2>
-  <p class="muted">Paste this into {{agentName .Data.Project.TargetAgent}} as a new message, then publish your app.</p>
-  <div class="copy-wrap">
+{{$agent := agentName .Data.Project.TargetAgent}}
+<section class="card step-card">
+  <span class="step-num" aria-hidden="true">1</span>
+  <h2>Ask {{$agent}} to install it</h2>
+  <p class="muted">Copy this message, paste it into {{$agent}} as a new message, then publish your app. No code to write.</p>
+  <div class="prompt-box">
     <pre id="install-prompt">{{.Data.Prompt}}</pre>
-    <button type="button" class="secondary" data-copy="#install-prompt">Copy</button>
+    <div class="row">
+      <button type="button" class="big" data-copy="#install-prompt" data-copied="Copied! Paste it into {{$agent}}, then publish your app."><i class="ico ico-copy"></i><span class="label">Copy install message</span></button>
+    </div>
   </div>
-  <details>
+  <details style="margin-top:.75rem">
     <summary>Or add the script tag yourself</summary>
     <p class="muted small">Put it inside <code>&lt;head&gt;</code>, before any other script.</p>
     <div class="copy-wrap">
       <pre id="script-tag">{{.Data.ScriptTag}}</pre>
-      <button type="button" class="secondary" data-copy="#script-tag">Copy</button>
+      <button type="button" class="secondary" data-copy="#script-tag"><span class="label">Copy</span></button>
     </div>
   </details>
   <p class="muted small">Tell your visitors you use Fix Assistant: our <a href="/privacy#for-customers">privacy policy</a> has a paragraph you can copy into yours.</p>
-</div>
+</section>
+
+<section class="card step-card">
+  <span class="step-num" aria-hidden="true">2</span>
+  <h2>Open your app</h2>
+  <p class="muted">Visit any page of the published app. The first event shows up here as soon as it arrives.</p>
+  {{template "setup_status" .Data.Status}}
+</section>
+
+<h2>Optional extras</h2>
+<p class="muted small" style="margin-top:-.25rem">Not needed to get started. Come back to these whenever you like.</p>
+
 {{with .Data.GitHub}}{{if .Enabled}}
-<div class="card">
-  <h2 style="margin-top:0">Connect your code <span class="muted small">(optional)</span></h2>
+<section class="card">
+  <h2>Connect your code <span class="muted small">(optional)</span></h2>
   {{if .Repo}}
-    <p>Connected to <code>{{.Repo}}</code>. Fix prompts now point to the exact file and line.</p>
-    <form method="post" action="/projects/{{$.Data.Project.ID}}/github/disconnect"><input type="hidden" name="csrf" value="{{$.Session.CSRF}}"><button class="link">Disconnect</button></form>
+    <p class="status-line"><span class="dot ok"></span><span>Connected to <code>{{.Repo}}</code>. Fix prompts now point to the exact file and line.</span></p>
+    <form method="post" action="/projects/{{$.Data.Project.ID}}/github/disconnect" data-confirm="Disconnect GitHub?" data-confirm-text="Fix messages will stop pointing to exact files and lines. You can connect again at any time." data-confirm-ok="Disconnect"><input type="hidden" name="csrf" value="{{$.Session.CSRF}}"><button class="link danger">Disconnect</button></form>
   {{else if .Choose}}
     <form method="post" action="/projects/{{$.Data.Project.ID}}/github/repo" class="row">
       <input type="hidden" name="csrf" value="{{$.Session.CSRF}}">
@@ -32,28 +47,24 @@
     </form>
   {{else}}
     <p class="muted">If your app's code is on GitHub (Lovable, Bolt and Cursor can sync it), connect it so fix prompts can say exactly which file and line to change. We only read code; it's never stored or shared.</p>
-    <form method="post" action="/projects/{{$.Data.Project.ID}}/github/connect"><input type="hidden" name="csrf" value="{{$.Session.CSRF}}"><button class="secondary">Connect GitHub</button></form>
+    <form method="post" action="/projects/{{$.Data.Project.ID}}/github/connect"><input type="hidden" name="csrf" value="{{$.Session.CSRF}}"><button class="secondary" data-busy="Opening GitHub…">Connect GitHub</button></form>
   {{end}}
-</div>
+</section>
 {{end}}{{end}}
-<div class="card">
-  <h2 style="margin-top:0">2. Open your app</h2>
-  <p class="muted">Visit any page of the published app. The first event shows up here as soon as it arrives.</p>
-  {{template "setup_status" .Data.Status}}
-</div>
-<div class="card" id="server-errors">
-  <h2 style="margin-top:0">3. Catch server errors too <span class="muted small">(optional)</span></h2>
+
+<section class="card" id="server-errors">
+  <h2>Catch server errors too <span class="muted small">(optional)</span></h2>
   <p class="muted">The script above sees problems in your visitors' browsers. If your app also has its own server code (a backend in Node.js, Python, .NET, PHP, Ruby, Java, Go or another language), errors there, such as a database refusing to save, only show up if the server reports them. Paste this into your AI agent, or send it to whoever builds your backend:</p>
   <div class="copy-wrap">
     <pre id="server-prompt">{{.Data.ServerPrompt}}</pre>
-    <button type="button" class="secondary" data-copy="#server-prompt">Copy</button>
+    <button type="button" class="secondary" data-copy="#server-prompt" data-copied="Copied! Paste it into your AI agent or send it to your developer."><span class="label">Copy</span></button>
   </div>
   <details>
     <summary>Or set it up yourself</summary>
     <p class="muted small">Your server's address (DSN). It's safe to put in your code: it can only send errors to this project.</p>
     <div class="copy-wrap">
       <pre id="server-dsn">{{.Data.DSN}}</pre>
-      <button type="button" class="secondary" data-copy="#server-dsn">Copy</button>
+      <button type="button" class="secondary" data-copy="#server-dsn"><span class="label">Copy</span></button>
     </div>
     <p class="muted small">Pick your backend. Each setup sends errors only, with no personal data. Setting the <code>SENTRY_RELEASE</code> environment variable to something that changes on every deploy (such as the git commit) lets Fix Assistant check fixes automatically after each deploy.</p>
     {{range $i, $s := .Data.ServerSnippets}}
@@ -61,34 +72,35 @@
       <summary>{{$s.Name}}</summary>
       <div class="copy-wrap">
         <pre id="server-snippet-{{$i}}">{{$s.Code}}</pre>
-        <button type="button" class="secondary" data-copy="#server-snippet-{{$i}}">Copy</button>
+        <button type="button" class="secondary" data-copy="#server-snippet-{{$i}}"><span class="label">Copy</span></button>
       </div>
     </details>
     {{end}}
   </details>
   {{if .Data.Status.ServerEvents}}
-    <p class="status-line"><span class="dot ok"></span><b>Server connected.</b> {{.Data.Status.ServerEvents}} server errors in the last 30 days.</p>
+    <p class="status-line"><span class="dot ok"></span><span><b>Server connected.</b> {{.Data.Status.ServerEvents}} server errors in the last 30 days.</span></p>
   {{else}}
-    <p class="status-line muted"><span class="dot"></span>No server errors received yet. That's normal until your server is set up, and good news after.</p>
+    <p class="status-line muted"><span class="dot"></span><span>No server errors received yet. That's normal until your server is set up, and good news after.</span></p>
   {{end}}
-</div>
-<div class="card" id="agent-loop">
-  <h2 style="margin-top:0">4. Let your AI agent fix issues in a loop <span class="muted small">(optional)</span></h2>
+</section>
+
+<section class="card" id="agent-loop">
+  <h2>Let your AI agent fix issues in a loop <span class="muted small">(optional)</span></h2>
   <p class="muted">Coding agents that support MCP (Claude Code, Cursor, VS Code, Windsurf) can connect to Fix Assistant directly. They read an issue, make the fix, report it after deploying, and ask Fix Assistant whether the error stopped. If it came back, they get the new evidence and try again, up to {{.Data.MaxAttempts}} times, then hand over to you.</p>
   {{if .Data.NewToken}}
     <div class="notice">
       <p><b>Your new agent token.</b> Copy it now: it won't be shown again. Treat it like a password and don't commit it to your repository.</p>
       <div class="copy-wrap">
         <pre id="agent-token">{{.Data.NewToken}}</pre>
-        <button type="button" class="secondary" data-copy="#agent-token">Copy</button>
+        <button type="button" class="secondary" data-copy="#agent-token" data-copied="Token copied. Keep it somewhere safe."><span class="label">Copy</span></button>
       </div>
     </div>
   {{end}}
   <form method="post" action="/projects/{{.Data.Project.ID}}/agent-tokens" class="row">
     <input type="hidden" name="csrf" value="{{.Session.CSRF}}">
     <label for="token-name" style="margin:0">Name</label>
-    <input id="token-name" name="name" placeholder="e.g. Cursor on my laptop" maxlength="60" style="width:auto">
-    <button type="submit">Create an agent token</button>
+    <input id="token-name" name="name" placeholder="e.g. Cursor on my laptop" maxlength="60" style="width:auto;flex:1 1 14rem">
+    <button type="submit" data-busy="Creating…">Create an agent token</button>
   </form>
   {{if .Data.AgentTokens}}
   <div class="table-wrap">
@@ -97,7 +109,7 @@
       <tbody>
       {{range .Data.AgentTokens}}
         <tr><td>{{.Name}} <code class="muted small">{{.Prefix}}…</code></td><td>{{ago .CreatedAt.Time}}</td><td>{{if .LastUsedAt.Valid}}{{ago .LastUsedAt.Time}}{{else}}never{{end}}</td>
-          <td class="num"><form method="post" action="/projects/{{$.Data.Project.ID}}/agent-tokens/{{.ID}}/revoke"><input type="hidden" name="csrf" value="{{$.Session.CSRF}}"><button class="link">Revoke</button></form></td></tr>
+          <td class="num"><form method="post" action="/projects/{{$.Data.Project.ID}}/agent-tokens/{{.ID}}/revoke" data-confirm="Revoke “{{.Name}}”?" data-confirm-text="Any agent using this token stops working right away. This can't be undone." data-confirm-ok="Revoke"><input type="hidden" name="csrf" value="{{$.Session.CSRF}}"><button class="link danger">Revoke</button></form></td></tr>
       {{end}}
       </tbody>
     </table>
@@ -109,14 +121,14 @@
     <summary>{{$s.Name}} <span class="muted small">· {{$s.Where}}</span></summary>
     <div class="copy-wrap">
       <pre id="agent-setup-{{$i}}">{{$s.Code}}</pre>
-      <button type="button" class="secondary" data-copy="#agent-setup-{{$i}}">Copy</button>
+      <button type="button" class="secondary" data-copy="#agent-setup-{{$i}}"><span class="label">Copy</span></button>
     </div>
   </details>
   {{end}}
   <p class="muted small">Finally, ask your agent:</p>
   <div class="copy-wrap">
     <pre id="loop-prompt">{{.Data.LoopPrompt}}</pre>
-    <button type="button" class="secondary" data-copy="#loop-prompt">Copy</button>
+    <button type="button" class="secondary" data-copy="#loop-prompt"><span class="label">Copy</span></button>
   </div>
-</div>
+</section>
 {{end}}

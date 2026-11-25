@@ -23,7 +23,7 @@
     <tbody>
     {{range .Data.Quarantined}}
       <tr><td><code>{{.Signature}}</code></td><td><code>{{or .CatalogKey.String "agent"}}</code></td><td class="num">{{.Worked}} / {{.Failed}}</td><td class="num">{{ago .QuarantinedAt.Time}}</td>
-        <td class="num"><form method="post" action="/admin/kb/{{.ID}}/reset"><input type="hidden" name="csrf" value="{{$.Session.CSRF}}"><button class="link">Reset</button></form></td></tr>
+        <td class="num"><form method="post" action="/admin/kb/{{.ID}}/reset" data-confirm="Reset this fix pattern?" data-confirm-text="Its worked/didn't counts start over and new issues use its prompt again." data-confirm-ok="Reset"><input type="hidden" name="csrf" value="{{$.Session.CSRF}}"><button class="link">Reset</button></form></td></tr>
     {{else}}<tr><td colspan="5" class="muted">None. Every fix pattern is doing all right.</td></tr>{{end}}
     </tbody>
   </table>
