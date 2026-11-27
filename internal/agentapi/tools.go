@@ -158,7 +158,7 @@ func (h *Handler) getIssue(ctx context.Context, c caller, id int64) (string, Iss
 	want := max(int(is.RegressionCount), failed) + 1
 	sug, err := q.LatestSuggestion(ctx, is.ID)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && int(sug.Attempt) < want) {
-		if _, _, err := ai.AnalyzeWith(ctx, h.Pool, is.ID, ai.AttemptAuto, h.Code); err != nil {
+		if _, _, err := (&ai.Analyzer{Code: h.Code, Model: h.Model, Log: h.Log}).Analyze(ctx, h.Pool, is.ID, ai.AttemptAuto); err != nil {
 			return "", IssueView{}, err
 		}
 		sug, err = q.LatestSuggestion(ctx, is.ID)

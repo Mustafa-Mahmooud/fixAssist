@@ -103,7 +103,11 @@ func ReportFix(ctx context.Context, pool *pgxpool.Pool, projectID, issueID int64
 			ReleaseID:    text(strings.TrimSpace(r.Release)), Summary: strings.TrimSpace(r.Summary), Files: files,
 			ReportedAt: ts(now),
 		})
-		return err
+		if err != nil || !sug.Valid {
+			return err
+		}
+		// What the agent changed, next to the prompt it was given.
+		return q.SetTrainingAttempt(ctx, db.SetTrainingAttemptParams{AgentSummary: strings.TrimSpace(r.Summary), Files: files, SuggestionID: sug.Int64})
 	})
 	return attempt, err
 }

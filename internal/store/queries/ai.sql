@@ -93,3 +93,9 @@ select count(*) from issues where project_id = $1 and status = 'fixed' and fixed
 
 -- name: DigestPageviews :one
 select count(*) from pageviews where project_id = $1 and ts >= $2 and ts < $3;
+
+-- name: SetSuggestionModel :exec
+-- What our own model cost for a suggestion it wrote (origin model).
+update fix_suggestions set model = @model, tokens_in = @tokens_in, tokens_out = @tokens_out,
+  cost_usd = @cost_usd, latency_ms = @latency_ms
+where id = @id;

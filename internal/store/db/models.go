@@ -414,6 +414,7 @@ type Project struct {
 	KeyPages              []string
 	Timezone              string
 	OnboardingDismissedAt pgtype.Timestamptz
+	TrainingOptOut        bool
 }
 
 type ProjectGithub struct {
@@ -452,6 +453,27 @@ type RiverJob struct {
 	Kind        string
 	ScheduledAt pgtype.Timestamptz
 	FinalizedAt pgtype.Timestamptz
+}
+
+type TrainingExample struct {
+	ID            int64
+	ProjectID     int64
+	IssueID       int64
+	SuggestionID  int64
+	Signature     string
+	Origin        string
+	CatalogKey    pgtype.Text
+	Model         pgtype.Text
+	PromptVersion string
+	Attempt       int32
+	Input         string
+	Output        []byte
+	AgentSummary  string
+	Files         []string
+	Outcome       pgtype.Text
+	OutcomeSource pgtype.Text
+	CreatedAt     pgtype.Timestamptz
+	OutcomeAt     pgtype.Timestamptz
 }
 
 type User struct {

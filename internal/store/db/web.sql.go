@@ -192,7 +192,7 @@ func (q *Queries) GetIssue(ctx context.Context, arg GetIssueParams) (Issue, erro
 }
 
 const getOrgProject = `-- name: GetOrgProject :one
-select p.id, p.name, p.target_agent, p.backend, p.allowed_domains, p.key_pages,
+select p.id, p.name, p.target_agent, p.backend, p.allowed_domains, p.key_pages, p.training_opt_out,
        coalesce((select k.public_key from project_keys k
                  where k.project_id = p.id and k.revoked_at is null
                  order by k.created_at desc limit 1), '')::text as public_key
@@ -211,6 +211,7 @@ type GetOrgProjectRow struct {
 	Backend        string
 	AllowedDomains []string
 	KeyPages       []string
+	TrainingOptOut bool
 	PublicKey      string
 }
 
@@ -224,6 +225,7 @@ func (q *Queries) GetOrgProject(ctx context.Context, arg GetOrgProjectParams) (G
 		&i.Backend,
 		&i.AllowedDomains,
 		&i.KeyPages,
+		&i.TrainingOptOut,
 		&i.PublicKey,
 	)
 	return i, err

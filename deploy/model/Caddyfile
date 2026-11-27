@@ -1,0 +1,15 @@
+# Only the chat and version endpoints, and only with the app's token.
+{$MODEL_DOMAIN} {
+	@app {
+		header Authorization "Bearer {$MODEL_TOKEN}"
+		path /api/chat /api/version
+	}
+	handle @app {
+		reverse_proxy ollama:11434 {
+			transport http {
+				read_timeout 5m
+			}
+		}
+	}
+	respond 401
+}

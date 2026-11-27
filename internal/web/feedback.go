@@ -112,7 +112,7 @@ func (a *App) answer(r *http.Request, projectID, issueID int64, outcome string, 
 		return err
 	}
 	if outcome == verify.Failed {
-		if _, _, err := ai.AnalyzeWith(r.Context(), a.Pool, issueID, ai.AttemptAfterFailure, a.Code); err != nil {
+		if _, _, err := a.analyzer().Analyze(r.Context(), a.Pool, issueID, ai.AttemptAfterFailure); err != nil {
 			return err
 		}
 	}

@@ -73,6 +73,11 @@ func Record(ctx context.Context, q *db.Queries, issueID int64, outcome, source, 
 	}); err != nil {
 		return err
 	}
+	if sugID.Valid { // the label for fine-tuning
+		if err := q.SetTrainingOutcome(ctx, db.SetTrainingOutcomeParams{Outcome: text(outcome), OutcomeSource: text(source), SuggestionID: sugID.Int64}); err != nil {
+			return err
+		}
+	}
 	var w, f int32
 	switch outcome {
 	case Worked:

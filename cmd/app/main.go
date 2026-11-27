@@ -35,6 +35,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/yourname/fixassist/internal/agentapi"
@@ -75,6 +76,8 @@ func main() {
 		err = admin(ctx, log, os.Args[2:])
 	case "spike-capture":
 		err = spikeCapture(ctx, log, os.Args[2:])
+	case "export-training":
+		err = exportTraining(ctx, os.Args[2:])
 	case "eval":
 		err = evalCmd(os.Args[2:])
 	default:
@@ -106,7 +109,10 @@ func usage() {
   app admin login-link --email EMAIL      (when EMAIL_MODE=off)
   app admin test-email --to EMAIL        (send one test email with the configured sender)
   app spike-capture [--out=DIR] [--addr=127.0.0.1:8787]
-  app eval [--agent lovable] [--show NAME|all]   run the golden-set rubric
+  app eval [--agent lovable] [--show NAME|all] [--model-url URL --model-name NAME [--min-pass 0.6]]
+                                                run the golden-set rubric (catalog, or our model)
+  app export-training [--format sft|dpo] [--out FILE] [--since 2026-01-02] [--holdout 0.1] [--golden] [--no-db]
+                                                fine-tuning data for our model (see training/README.md)
 env: DATABASE_URL (required except spike-capture), INGEST_PUBLIC_URL (default http://<addr>)
 `)
 }
@@ -220,7 +226,8 @@ func serve(ctx context.Context, log *slog.Logger, args []string) error {
 		code = &github.Searcher{App: ghApp, Pool: pool}
 		log.Info("github code context enabled", "app", ghApp.Slug)
 	}
-	riverClient, err := jobs.NewClientWith(jobs.Deps{Pool: pool, Log: log, Notifier: notifier, Code: code, RunWorkers: enabled["worker"]})
+	model := modelFromEnv(log)
+	riverClient, err := jobs.NewClientWith(jobs.Deps{Pool: pool, Log: log, Notifier: notifier, Code: code, Model: model, RunWorkers: enabled["worker"]})
 	if err != nil {
 		return err
 	}
@@ -266,10 +273,11 @@ func serve(ctx context.Context, log *slog.Logger, args []string) error {
 			Metrics:    metrics,
 			GitHub:     ghApp,
 			Code:       code,
+			Model:      model,
 			Log:        log,
 		}).Register(mux)
 		// The agent loop: MCP at /mcp, JSON at /agent/v1 (agent tokens).
-		(&agentapi.Handler{Pool: pool, Code: code, Log: log}).Register(mux)
+		(&agentapi.Handler{Pool: pool, Code: code, Model: model, Log: log}).Register(mux)
 		log.Info("dashboard", "url", base)
 	}
 	if enabled["worker"] {
@@ -447,9 +455,15 @@ func evalCmd(args []string) error {
 	agent := fs.String("agent", "lovable", "agent style: "+strings.Join(projects.Agents, ", "))
 	show := fs.String("show", "", "print the full prompt for one case name, or \"all\"")
 	fromEnv := fs.String("from-envelopes", "", "instead of the golden set: explain captured envelopes (grouped by spike_case tag) and print the prompts")
+	modelURL := fs.String("model-url", "", "evaluate our model at this Ollama URL instead of the catalog (catalog bypassed)")
+	modelName := fs.String("model-name", "qwen3.5:4b", "with --model-url: the model to evaluate, e.g. errfix-qwen:v2")
+	minPass := fs.Float64("min-pass", 0, "with --model-url: exit 1 below this pass rate (0..1), to gate a new model version")
 	_ = fs.Parse(args)
 	if *fromEnv != "" {
 		return explainEnvelopes(*fromEnv, *agent)
+	}
+	if *modelURL != "" {
+		return evalModel(*modelURL, *modelName, *agent, *show, *minPass)
 	}
 	results, err := ai.RunEval(*agent)
 	if err != nil {
@@ -585,4 +599,174 @@ func contactEmail() string {
 		return s[0]
 	}
 	return ""
+}
+
+// modelFromEnv is our own model for errors outside the catalog (MODEL_URL,
+// an Ollama host). Unset means agent mode: the generic prompt, as before.
+func modelFromEnv(log *slog.Logger) ai.LLM {
+	url := strings.TrimSpace(os.Getenv("MODEL_URL"))
+	if url == "" {
+		return nil
+	}
+	name := strings.TrimSpace(os.Getenv("MODEL_NAME"))
+	if name == "" {
+		name = "qwen3.5:4b"
+	}
+	timeout := 90 * time.Second
+	if d, err := time.ParseDuration(os.Getenv("MODEL_TIMEOUT")); err == nil && d > 0 {
+		timeout = d
+	}
+	log.Info("model explanations enabled", "model", name, "timeout", timeout)
+	return ai.NewOllama(url, name, os.Getenv("MODEL_TOKEN"), timeout)
+}
+
+// exportTraining writes fine-tuning data: out (train) and out with
+// .eval.jsonl (the held-out error patterns).
+func exportTraining(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("export-training", flag.ExitOnError)
+	format := fs.String("format", "sft", "sft (worked answers) or dpo (failed vs. later worked, same error)")
+	out := fs.String("out", "training/data/sft.jsonl", "output file; the eval split goes next to it as .eval.jsonl")
+	since := fs.String("since", "2000-01-01", "only examples created on or after this date")
+	holdout := fs.Float64("holdout", 0.1, "share of error patterns kept for evaluation")
+	golden := fs.Bool("golden", true, "sft: also include the golden set's catalog answers (bootstrap)")
+	noDB := fs.Bool("no-db", false, "don't read the database (bootstrap data only)")
+	_ = fs.Parse(args)
+	from, err := time.Parse("2006-01-02", *since)
+	if err != nil {
+		return fmt.Errorf("--since: %w", err)
+	}
+
+	var rows []db.TrainingExample
+	if !*noDB {
+		pool, err := openDB(ctx)
+		if err != nil {
+			return err
+		}
+		defer pool.Close()
+		rows, err = db.New(pool).TrainingExamples(ctx, db.TrainingExamplesParams{Since: pgtype.Timestamptz{Time: from, Valid: true}})
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(*out), 0o755); err != nil {
+		return err
+	}
+	evalOut := strings.TrimSuffix(*out, ".jsonl") + ".eval.jsonl"
+	write := func(path string, items any) error {
+		f, err := os.Create(path)
+		if err != nil {
+			return err
+		}
+		switch v := items.(type) {
+		case []ai.SFTExample:
+			err = ai.WriteJSONL(f, v)
+		case []ai.DPOExample:
+			err = ai.WriteJSONL(f, v)
+		}
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+		return err
+	}
+
+	switch *format {
+	case "sft":
+		list := ai.SFTFromRows(rows)
+		if *golden {
+			cases, err := ai.GoldenCases()
+			if err != nil {
+				return err
+			}
+			for _, gc := range cases {
+				if ex, ok := ai.SFTFromContext(ai.ContextFor(gc, "other"), "golden"); ok {
+					list = append(list, ex)
+				}
+			}
+		}
+		var train, eval []ai.SFTExample
+		for _, ex := range list {
+			if ai.Holdout(ex.Meta.Signature, ex.Meta.Key, *holdout) {
+				eval = append(eval, ex)
+			} else {
+				train = append(train, ex)
+			}
+		}
+		if err := write(*out, train); err != nil {
+			return err
+		}
+		if err := write(evalOut, eval); err != nil {
+			return err
+		}
+		fmt.Printf("sft: %d train, %d eval (from %d database rows)\n%s\n%s\n", len(train), len(eval), len(rows), *out, evalOut)
+	case "dpo":
+		list := ai.DPOFromRows(rows)
+		var train, eval []ai.DPOExample
+		for _, ex := range list {
+			if ai.Holdout(ex.Meta.Signature, "", *holdout) {
+				eval = append(eval, ex)
+			} else {
+				train = append(train, ex)
+			}
+		}
+		if err := write(*out, train); err != nil {
+			return err
+		}
+		if err := write(evalOut, eval); err != nil {
+			return err
+		}
+		fmt.Printf("dpo: %d train pairs, %d eval pairs (from %d database rows)\n%s\n%s\n", len(train), len(eval), len(rows), *out, evalOut)
+	default:
+		return fmt.Errorf("--format must be sft or dpo")
+	}
+	return nil
+}
+
+// evalModel scores one model version on the golden set (see EvaluateModel).
+func evalModel(url, name, agent, show string, minPass float64) error {
+	cases, err := ai.GoldenCases()
+	if err != nil {
+		return err
+	}
+	m := ai.NewOllama(url, name, os.Getenv("MODEL_TOKEN"), 5*time.Minute)
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintf(tw, "model %s, prompt %s, agent %s (catalog bypassed)\n\nRESULT\tCASE\tCATALOG WOULD SAY\tSEVERITY\tSECONDS\tPROBLEMS\n", name, ai.ModelPromptVersion, agent)
+	var results []ai.ModelEvalResult
+	passed, valid := 0, 0
+	var total time.Duration
+	for _, gc := range cases {
+		r := ai.EvaluateModel(context.Background(), gc, agent, m)
+		results = append(results, r)
+		status := "pass"
+		if r.Pass() {
+			passed++
+		} else {
+			status = "FAIL"
+		}
+		if r.Err == nil {
+			valid++
+			total += r.Latency
+		}
+		key := gc.Expect.Catalog
+		if key == "" {
+			key = "(none: model's real job)"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%.0f\t%s\n", status, gc.Name, key, r.Suggestion.Severity, r.Latency.Seconds(), strings.Join(r.Failures, "; "))
+		_ = tw.Flush()
+	}
+	avg := time.Duration(0)
+	if valid > 0 {
+		avg = total / time.Duration(valid)
+	}
+	rate := float64(passed) / float64(max(len(cases), 1))
+	fmt.Printf("\n%d/%d pass the rubric (%.0f%%), %d/%d valid replies, %.0fs average\n", passed, len(cases), rate*100, valid, len(cases), avg.Seconds())
+	for _, r := range results {
+		if show == "all" || show == r.Case.Name {
+			fmt.Printf("\n=== %s\nTitle: %s\nWhat broke: %s\nWhy: %s\n--- prompt ---\n%s\n", r.Case.Name, r.Suggestion.Title, r.Suggestion.WhatBroke, r.Suggestion.Why, r.Prompt)
+		}
+	}
+	if rate < minPass {
+		return fmt.Errorf("pass rate %.2f is below --min-pass %.2f", rate, minPass)
+	}
+	return nil
 }

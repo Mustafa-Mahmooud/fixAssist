@@ -67,9 +67,10 @@ func (w *GroupEventWorker) Work(ctx context.Context, job *river.Job[jobargs.Grou
 // queues the instant-alert check.
 type AnalyzeWorker struct {
 	river.WorkerDefaults[jobargs.AnalyzeIssue]
-	Pool *pgxpool.Pool
-	Log  *slog.Logger
-	Code ai.CodeSearcher // optional: GitHub code context
+	Pool  *pgxpool.Pool
+	Log   *slog.Logger
+	Code  ai.CodeSearcher // optional: GitHub code context
+	Model ai.LLM          // optional: our model for errors outside the catalog
 }
 
 func (w *AnalyzeWorker) Work(ctx context.Context, job *river.Job[jobargs.AnalyzeIssue]) error {
@@ -77,7 +78,7 @@ func (w *AnalyzeWorker) Work(ctx context.Context, job *river.Job[jobargs.Analyze
 	if job.Args.Reason == "regression" {
 		attempt = ai.AttemptAfterFailure
 	}
-	id, s, err := ai.AnalyzeWith(ctx, w.Pool, job.Args.IssueID, attempt, w.Code)
+	id, s, err := (&ai.Analyzer{Code: w.Code, Model: w.Model, Log: w.Log}).Analyze(ctx, w.Pool, job.Args.IssueID, attempt)
 	if err != nil {
 		return err
 	}
@@ -219,6 +220,7 @@ type Deps struct {
 	Log        *slog.Logger
 	Notifier   *alerts.Notifier
 	Code       ai.CodeSearcher // optional: GitHub code context
+	Model      ai.LLM          // optional: our model for errors outside the catalog
 	RunWorkers bool
 }
 
@@ -227,7 +229,7 @@ func NewClientWith(d Deps) (*river.Client[pgx.Tx], error) {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &GroupEventWorker{Pool: d.Pool, Log: d.Log})
 	river.AddWorker(workers, &PartitionsWorker{Pool: d.Pool, Log: d.Log})
-	river.AddWorker(workers, &AnalyzeWorker{Pool: d.Pool, Log: d.Log, Code: d.Code})
+	river.AddWorker(workers, &AnalyzeWorker{Pool: d.Pool, Log: d.Log, Code: d.Code, Model: d.Model})
 	river.AddWorker(workers, &AlertCheckWorker{Notifier: d.Notifier, Log: d.Log})
 	river.AddWorker(workers, &DigestWorker{Notifier: d.Notifier, Log: d.Log})
 	river.AddWorker(workers, &VerifyWorker{Pool: d.Pool, Log: d.Log})

@@ -1,0 +1,8 @@
+# Ollama model built from a fine-tuned GGUF:
+#   ollama create errfix-qwen:v1 -f Modelfile
+# Run it next to the .gguf file (rename the export to model.gguf, or edit FROM).
+# The app sends its own system prompt, a JSON schema (format) and think:false
+# on every call, so only sampling defaults live here.
+FROM ./model.gguf
+PARAMETER temperature 0.2
+PARAMETER num_ctx 4096

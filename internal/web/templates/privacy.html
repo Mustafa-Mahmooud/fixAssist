@@ -53,6 +53,7 @@
   <li>To check whether a fix worked, after the customer publishes it.</li>
   <li>To show the customer traffic statistics for their own app.</li>
   <li>To improve fix suggestions across all apps. For this, only the <b>pattern</b> of an error (for example "value too long for a database column") and counts of how often a fix worked are shared between apps. No visitor data, error details or customer names are shared, and other apps only ever see totals.</li>
+  <li id="training">To train Fix Assistant's own AI model, which writes suggestions for errors it hasn't seen before. For each suggestion it keeps a cleaned copy of the error details, the suggestion, what the customer's coding agent changed (its summary and the file names) and whether the fix worked. Emails, IP addresses, keys, tokens and other secrets are removed first. The model runs on servers Fix Assistant rents, and this data isn't given to anyone else. It is kept until the customer turns this off in the project's Setup page ("Help improve fix suggestions"), which also deletes what was kept, or deletes the project.</li>
 </ul>
 <p>Fix Assistant doesn't sell data, doesn't show ads, and doesn't use AI models from other companies to process your data.</p>
 
@@ -75,6 +76,7 @@
 <ul>
   <li><b>Raw error reports, page views and clicks:</b> 30 days, then deleted automatically.</li>
   <li><b>Issues</b> (the grouped errors, with up to 20 cleaned example reports each), <b>fix suggestions</b> and <b>daily statistics</b>: for as long as the customer's project exists.</li>
+  <li><b>Model training data</b> (cleaned, see <a href="#training">section 4</a>): until the customer turns it off or deletes the project.</li>
   <li><b>Sign-in links:</b> 15 minutes (or until used). <b>Sessions:</b> 30 days.</li>
   <li><b>Accounts:</b> until the customer asks for deletion.</li>
 </ul>

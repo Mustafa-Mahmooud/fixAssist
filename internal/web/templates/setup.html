@@ -131,4 +131,15 @@
     <button type="button" class="secondary" data-copy="#loop-prompt"><span class="label">Copy</span></button>
   </div>
 </section>
+
+<section class="card" id="training">
+  <h2>Help improve fix suggestions</h2>
+  <p class="muted">Fix Assistant trains its own AI model (it runs on our servers, not another company's) on errors and on whether their fixes worked, so new kinds of errors get better suggestions. Before anything is kept for this, personal details, IP addresses, keys and other secrets are removed. See the <a href="/privacy#training">privacy policy</a>.</p>
+  <form method="post" action="/projects/{{.Data.Project.ID}}/training" class="row">
+    <input type="hidden" name="csrf" value="{{.Session.CSRF}}">
+    <label style="margin:0"><input type="checkbox" name="training" {{if not .Data.Project.TrainingOptOut}}checked{{end}}> Use this project's errors to improve the model</label>
+    <button type="submit" class="secondary" data-busy="Saving…">Save</button>
+  </form>
+  <p class="muted small">Turning this off also deletes what was already kept from this project.</p>
+</section>
 {{end}}

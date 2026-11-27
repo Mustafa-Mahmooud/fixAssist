@@ -40,6 +40,7 @@ type App struct {
 	Metrics    *obs.Metrics // optional, for the admin page
 	GitHub     *github.App  // optional: code context (Phase 7)
 	Code       ai.CodeSearcher
+	Model      ai.LLM // optional: our model for errors outside the catalog
 	GitHubWeb  string // overrides https://github.com (tests)
 	GitHubAPI  string // overrides https://api.github.com (tests)
 	Log        *slog.Logger
@@ -101,6 +102,7 @@ func (a *App) Register(mux *http.ServeMux) {
 	mux.Handle("GET /github/setup", a.signedIn(a.githubSetup))
 	mux.Handle("POST /projects/{id}/github/repo", a.signedIn(a.githubChooseRepo))
 	mux.Handle("POST /projects/{id}/github/disconnect", a.signedIn(a.githubDisconnect))
+	mux.Handle("POST /projects/{id}/training", a.signedIn(a.setTraining))
 	mux.HandleFunc("GET /f/{sid}/{outcome}", a.feedbackLinkPage)
 	mux.HandleFunc("POST /f/{sid}/{outcome}", a.feedbackLinkSubmit)
 }
@@ -557,7 +559,7 @@ func (a *App) explainNow(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, _, err := ai.AnalyzeWith(r.Context(), a.Pool, is.ID, ai.AttemptAuto, a.Code); err != nil {
+	if _, _, err := a.analyzer().Analyze(r.Context(), a.Pool, is.ID, ai.AttemptAuto); err != nil {
 		a.fail(w, err)
 		return
 	}
@@ -597,4 +599,34 @@ func (a *App) setIssueStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/projects/"+strconv.FormatInt(p.ID, 10)+"/issues/"+strconv.FormatInt(is.ID, 10), http.StatusSeeOther)
+}
+
+// analyzer explains issues with the optional code search and model.
+func (a *App) analyzer() *ai.Analyzer {
+	return &ai.Analyzer{Code: a.Code, Model: a.Model, Log: a.Log}
+}
+
+// setTraining turns the project's fine-tuning data on or off. Turning it off
+// also deletes what was collected.
+func (a *App) setTraining(w http.ResponseWriter, r *http.Request) {
+	p, ok := a.project(w, r)
+	if !ok {
+		return
+	}
+	optOut := r.PostFormValue("training") != "on"
+	err := pgx.BeginFunc(r.Context(), a.Pool, func(tx pgx.Tx) error {
+		q := db.New(tx)
+		if err := q.SetProjectTrainingOptOut(r.Context(), db.SetProjectTrainingOptOutParams{ID: p.ID, OptOut: optOut}); err != nil {
+			return err
+		}
+		if optOut {
+			return q.DeleteProjectTraining(r.Context(), p.ID)
+		}
+		return nil
+	})
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	http.Redirect(w, r, "/projects/"+strconv.FormatInt(p.ID, 10)+"/setup#training", http.StatusSeeOther)
 }

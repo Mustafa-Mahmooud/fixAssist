@@ -53,10 +53,11 @@ func HashToken(token string) string {
 
 // Handler serves /mcp and /agent/v1.
 type Handler struct {
-	Pool *pgxpool.Pool
-	Code ai.CodeSearcher // optional: GitHub code context for new prompts
-	Log  *slog.Logger
-	Now  func() time.Time
+	Pool  *pgxpool.Pool
+	Code  ai.CodeSearcher // optional: GitHub code context for new prompts
+	Model ai.LLM          // optional: our model for errors outside the catalog
+	Log   *slog.Logger
+	Now   func() time.Time
 }
 
 func (h *Handler) now() time.Time {

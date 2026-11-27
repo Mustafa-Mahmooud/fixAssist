@@ -29,3 +29,7 @@ spike/fixcheck/app/node_modules
 spike/fixcheck/app/dist
 spike/fixcheck/app/.env.local
 spike/fixcheck/app/src/buildinfo.js
+
+# Fine-tuning data exported from production (scrubbed, but customer-derived)
+training/data/
+training/out/

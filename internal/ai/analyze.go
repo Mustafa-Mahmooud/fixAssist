@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -87,22 +88,50 @@ func Analyze(ctx context.Context, pool *pgxpool.Pool, issueID int64, attempt int
 // searcher is given. The lookup happens before the transaction, and its
 // failure never blocks the explanation.
 func AnalyzeWith(ctx context.Context, pool *pgxpool.Pool, issueID int64, attempt int, code CodeSearcher) (int64, Suggestion, error) {
+	return (&Analyzer{Code: code}).Analyze(ctx, pool, issueID, attempt)
+}
+
+// Analyzer holds the optional helpers of an analysis: code search, and our
+// own model for errors outside the catalog. Both run before the
+// transaction, and neither failing blocks the explanation.
+type Analyzer struct {
+	Code  CodeSearcher
+	Model LLM
+	Log   *slog.Logger
+}
+
+// Analyze explains one issue and stores the suggestion.
+func (a *Analyzer) Analyze(ctx context.Context, pool *pgxpool.Pool, issueID int64, attempt int) (int64, Suggestion, error) {
 	var id int64
 	c, err := Load(ctx, db.New(pool), issueID, attempt)
 	if err != nil {
 		return 0, Suggestion{}, err
 	}
 	s := Explain(c)
-	if code != nil {
+	if a.Code != nil {
 		if terms := CodeTerms(c, s.CatalogKey); len(terms) > 0 {
 			sctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-			refs, err := code.Refs(sctx, c.ProjectID, terms)
+			refs, err := a.Code.Refs(sctx, c.ProjectID, terms)
 			cancel()
 			if err == nil && len(refs) > 0 {
 				c.CodeRefs = refs
 				s = Explain(c)
 			}
 		}
+	}
+	var mr *ModelResult
+	if a.Model != nil && s.Origin == "agent" {
+		var merr error
+		s, mr, merr = ExplainWithModel(ctx, c, a.Model)
+		if merr != nil && a.Log != nil {
+			a.Log.Warn("model explanation failed; using the generic prompt", "issue_id", issueID, "err", merr)
+		}
+	}
+	promptVersion := PromptVersion
+	core := explainCore(c) // the training target
+	if mr != nil {
+		promptVersion = ModelPromptVersion
+		core = mr.Core
 	}
 	err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		q := db.New(tx)
@@ -131,6 +160,7 @@ func AnalyzeWith(ctx context.Context, pool *pgxpool.Pool, issueID int64, attempt
 			// diagnosis to the founder's agent instead, and don't count the
 			// answer against the quarantined pattern.
 			s = QuarantineFallback(c)
+			core = s
 			s.FixPrompt += whereToLook(c.CodeRefs)
 			kbID = pgtype.Int8{}
 		case !kb.QuarantinedAt.Valid && kb.Worked >= ProvenMinWorked && kb.Confidence >= ProvenMinConfidence:
@@ -139,12 +169,30 @@ func AnalyzeWith(ctx context.Context, pool *pgxpool.Pool, issueID int64, attempt
 
 		id, err = q.InsertSuggestion(ctx, db.InsertSuggestionParams{
 			IssueID: issueID, Origin: s.Origin, CatalogKey: pgtype.Text{String: s.CatalogKey, Valid: s.CatalogKey != ""},
-			PromptVersion: PromptVersion, TargetAgent: c.Agent, Severity: s.Severity, Title: s.Title,
+			PromptVersion: promptVersion, TargetAgent: c.Agent, Severity: s.Severity, Title: s.Title,
 			WhatBroke: s.WhatBroke, WhoIsAffected: s.WhoIsAffected, Why: s.Why, FixPrompt: s.FixPrompt,
 			HowToCheck: s.HowToCheck, Confidence: numeric(s.Confidence), Attempt: int32(c.Attempt),
 			KbEntryID: kbID, CodeRefs: codeRefsJSON(c.CodeRefs),
 		})
 		if err != nil {
+			return err
+		}
+		var model pgtype.Text
+		if mr != nil && s.Origin != "catalog" {
+			model = pgtype.Text{String: mr.Model, Valid: true}
+			if err := q.SetSuggestionModel(ctx, db.SetSuggestionModelParams{
+				ID: id, Model: model, TokensIn: int32(mr.TokensIn), TokensOut: int32(mr.TokensOut),
+				CostUsd: numeric(mr.CostUSD), LatencyMs: int32(mr.Latency.Milliseconds()),
+			}); err != nil {
+				return err
+			}
+		}
+		// Fine-tuning data (skipped in SQL when the project opted out).
+		if err := q.InsertTrainingExample(ctx, db.InsertTrainingExampleParams{
+			ProjectID: c.ProjectID, IssueID: issueID, SuggestionID: id, Signature: c.Signature, Origin: s.Origin,
+			CatalogKey: pgtype.Text{String: s.CatalogKey, Valid: s.CatalogKey != ""}, Model: model,
+			PromptVersion: promptVersion, Attempt: int32(c.Attempt), Input: TrainingInput(c), Output: TrainingOutput(core),
+		}); err != nil {
 			return err
 		}
 		return q.MarkIssueExplained(ctx, issueID)

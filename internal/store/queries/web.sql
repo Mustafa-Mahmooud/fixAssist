@@ -53,7 +53,7 @@ select p.id, p.name, p.target_agent, p.backend, p.created_at,
 from projects p where p.org_id = $1 order by p.id;
 
 -- name: GetOrgProject :one
-select p.id, p.name, p.target_agent, p.backend, p.allowed_domains, p.key_pages,
+select p.id, p.name, p.target_agent, p.backend, p.allowed_domains, p.key_pages, p.training_opt_out,
        coalesce((select k.public_key from project_keys k
                  where k.project_id = p.id and k.revoked_at is null
                  order by k.created_at desc limit 1), '')::text as public_key

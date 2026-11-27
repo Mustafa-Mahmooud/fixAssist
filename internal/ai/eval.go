@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -68,12 +69,42 @@ func ContextFor(gc GoldenCase, agent string) *Context {
 
 // Evaluate runs the rubric on one case.
 func Evaluate(gc GoldenCase, agent string) EvalResult {
-	s := Explain(ContextFor(gc, agent))
+	return score(gc, agent, Explain(ContextFor(gc, agent)), true)
+}
+
+// ModelEvalResult is one case answered by our model, catalog bypassed.
+type ModelEvalResult struct {
+	EvalResult
+	Err     error // the call failed or the reply wasn't valid
+	Latency time.Duration
+	Tokens  int
+}
+
+// EvaluateModel asks the model every golden case (the catalog is skipped,
+// so known errors measure how close the model gets to the curated answer)
+// and applies the same rubric, minus the catalog key.
+func EvaluateModel(ctx context.Context, gc GoldenCase, agent string, m LLM) ModelEvalResult {
+	c := ContextFor(gc, agent)
+	res, err := m.Complete(ctx, BuildModelRequest(c))
+	if err != nil {
+		return ModelEvalResult{EvalResult: EvalResult{Case: gc, Failures: []string{"model call: " + err.Error()}}, Err: err}
+	}
+	out := ModelEvalResult{Latency: res.Latency, Tokens: res.TokensOut}
+	s, err := ParseModelSuggestion(res.Text)
+	if err != nil {
+		out.EvalResult, out.Err = EvalResult{Case: gc, Failures: []string{"invalid reply: " + err.Error()}}, err
+		return out
+	}
+	out.EvalResult = score(gc, agent, finish(c, s), false)
+	return out
+}
+
+func score(gc GoldenCase, agent string, s Suggestion, checkCatalog bool) EvalResult {
 	prompt := ForAgent(agent, s)
 	r := EvalResult{Case: gc, Suggestion: s, Prompt: prompt}
 	fail := func(f string, a ...any) { r.Failures = append(r.Failures, fmt.Sprintf(f, a...)) }
 
-	if s.CatalogKey != gc.Expect.Catalog {
+	if checkCatalog && s.CatalogKey != gc.Expect.Catalog {
 		fail("catalog %q, want %q", s.CatalogKey, gc.Expect.Catalog)
 	}
 	if gc.Expect.Severity != "" && s.Severity != gc.Expect.Severity {

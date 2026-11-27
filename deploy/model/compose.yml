@@ -1,0 +1,29 @@
+# The model host: Ollama behind Caddy (TLS + bearer token). Ollama has no
+# auth of its own, so it is never published directly. See docs/model.md.
+services:
+  ollama:
+    image: ollama/ollama:0.40.16
+    restart: unless-stopped
+    environment:
+      OLLAMA_NUM_PARALLEL: "1"        # the app sends one request at a time
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_KEEP_ALIVE: "24h"        # keep the model in RAM between issues
+    volumes:
+      - ollama:/root/.ollama
+      - ./models:/models:ro           # fine-tuned GGUFs + Modelfiles to `ollama create`
+
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      MODEL_DOMAIN: ${MODEL_DOMAIN:?set MODEL_DOMAIN}
+      MODEL_TOKEN: ${MODEL_TOKEN:?set MODEL_TOKEN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy:/data
+    depends_on: [ollama]
+
+volumes:
+  ollama:
+  caddy:

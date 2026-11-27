@@ -507,6 +507,34 @@ func (q *Queries) SetAlertEmailed(ctx context.Context, arg SetAlertEmailedParams
 	return err
 }
 
+const setSuggestionModel = `-- name: SetSuggestionModel :exec
+update fix_suggestions set model = $1, tokens_in = $2, tokens_out = $3,
+  cost_usd = $4, latency_ms = $5
+where id = $6
+`
+
+type SetSuggestionModelParams struct {
+	Model     pgtype.Text
+	TokensIn  int32
+	TokensOut int32
+	CostUsd   pgtype.Numeric
+	LatencyMs int32
+	ID        int64
+}
+
+// What our own model cost for a suggestion it wrote (origin model).
+func (q *Queries) SetSuggestionModel(ctx context.Context, arg SetSuggestionModelParams) error {
+	_, err := q.db.Exec(ctx, setSuggestionModel,
+		arg.Model,
+		arg.TokensIn,
+		arg.TokensOut,
+		arg.CostUsd,
+		arg.LatencyMs,
+		arg.ID,
+	)
+	return err
+}
+
 const suggestionsForIssue = `-- name: SuggestionsForIssue :many
 select id, origin, catalog_key, attempt, created_at from fix_suggestions
 where issue_id = $1 order by created_at desc limit 10

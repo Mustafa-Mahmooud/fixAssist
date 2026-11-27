@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -12,6 +13,12 @@ import (
 // error is well known, otherwise a diagnose-and-fix prompt that hands the
 // code-level work to the founder's agent with all the evidence we have.
 func Explain(c *Context) Suggestion {
+	return finish(c, explainCore(c))
+}
+
+// explainCore is the explanation itself, before finish adds what comes from
+// data. It is the training target for catalog and generic suggestions.
+func explainCore(c *Context) Suggestion {
 	var s Suggestion
 	matched := false
 	for _, e := range catalog {
@@ -29,6 +36,43 @@ func Explain(c *Context) Suggestion {
 			s = generic(c)
 		}
 	}
+	return s
+}
+
+// ModelResult is what our model added to a suggestion, for fix_suggestions.
+type ModelResult struct {
+	Model     string
+	TokensIn  int
+	TokensOut int
+	CostUSD   float64
+	Latency   time.Duration
+	Core      Suggestion // the model's answer before finish (training target)
+}
+
+// ExplainWithModel is Explain, but an error outside the catalog goes to our
+// model first. When the model is off, fails or answers badly, it returns
+// Explain's generic prompt and the model error (for logging only).
+func ExplainWithModel(ctx context.Context, c *Context, m LLM) (Suggestion, *ModelResult, error) {
+	s := Explain(c)
+	if m == nil || s.Origin != "agent" {
+		return s, nil, nil
+	}
+	res, err := m.Complete(ctx, BuildModelRequest(c))
+	if err != nil {
+		return s, nil, err
+	}
+	ms, err := ParseModelSuggestion(res.Text)
+	if err != nil {
+		return s, nil, err
+	}
+	if ms.Title == "" {
+		ms.Title = c.Title
+	}
+	return finish(c, ms), &ModelResult{Model: res.Model, TokensIn: res.TokensIn, TokensOut: res.TokensOut, CostUSD: res.CostUSD, Latency: res.Latency, Core: ms}, nil
+}
+
+// finish adds what comes from data, whoever wrote the explanation.
+func finish(c *Context, s Suggestion) Suggestion {
 	s.WhoIsAffected = who(c)
 	s.FixPrompt += stackLocations(c.srv())
 	s.FixPrompt += whereToLook(c.CodeRefs)

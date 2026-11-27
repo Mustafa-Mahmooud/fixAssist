@@ -38,14 +38,18 @@ func srvC(route, platform string, chain ...string) *Context {
 	return &Context{Kind: "server", Route: route, Users: 1, Events: 3, Attempt: 1, Server: []ServerSample{s}}
 }
 
-func TestCatalogMore(t *testing.T) {
+type catalogCase struct {
+	name string
+	c    *Context
+	key  string
+	want []string // in the fix prompt or the explanation
+}
+
+// catalogMoreCases covers every extended catalog entry. Also the bootstrap
+// set for fine-tuning (TestExportCatalogBootstrap).
+func catalogMoreCases() []catalogCase {
 	const sb = "https://abc.supabase.co"
-	cases := []struct {
-		name string
-		c    *Context
-		key  string
-		want []string // in the fix prompt or the explanation
-	}{
+	return []catalogCase{
 		// Noise.
 		{"abort", jsC("/search", "AbortError", "signal is aborted without reason"), "noise.aborted", []string{"AbortError"}},
 		{"resize observer", jsC("/", "Error", "ResizeObserver loop completed with undelivered notifications."), "noise.resize_observer", []string{"requestAnimationFrame"}},
@@ -174,6 +178,10 @@ func TestCatalogMore(t *testing.T) {
 		{"gateway", netC("/reports", "GET", "https://app.example.com/api/report", 504, "<html>504 Gateway Time-out</html>", ""), "net.gateway", []string{"/api/report"}},
 		{"local address still", netC("/", "GET", "http://localhost:3000/api/x", 0, "", "Failed to fetch"), "net.local_address", nil},
 	}
+}
+
+func TestCatalogMore(t *testing.T) {
+	cases := catalogMoreCases()
 	seen := map[string]bool{}
 	// An empty quote (not a quoted message that itself ends in a quote).
 	reBroken := regexp.MustCompile(`%!|\(MISSING\)|(?:^|[\s(:])""|<nil>`)
