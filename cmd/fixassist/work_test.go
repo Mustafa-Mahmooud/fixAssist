@@ -1,6 +1,11 @@
 package main
 
 import (
+	"context"
+	"os"
+	"os/user"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -69,5 +74,34 @@ func TestSecretIn(t *testing.T) {
 		if got := secretIn([]byte(c.diff), tok); got != c.want {
 			t.Errorf("%q: got %q, want %q", c.diff, got, c.want)
 		}
+	}
+}
+
+// With FIXASSIST_SCHTASKS_CHECK=1 on Windows, registers the real task XML
+// under a throwaway name (never started) and deletes it again.
+func TestTaskXMLAccepted(t *testing.T) {
+	x := taskXML(`HOST\user & co`, `C:\Program Files\fix assist\fixassist.exe`, `C:\Users\a<b\fixassist.log`)
+	for _, want := range []string{`HOST\user &amp; co`, `--headless &#34;C:\Program Files\fix assist\fixassist.exe&#34; watch --log &#34;C:\Users\a&lt;b\fixassist.log&#34;`, "<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>"} {
+		if !strings.Contains(x, want) {
+			t.Errorf("task XML missing %q:\n%s", want, x)
+		}
+	}
+	if os.Getenv("FIXASSIST_SCHTASKS_CHECK") != "1" || runtime.GOOS != "windows" {
+		return
+	}
+	u, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := filepath.Join(t.TempDir(), "task.xml")
+	if err := os.WriteFile(f, utf16File(taskXML(u.Username, `C:\nonexistent\fixassist.exe`, `C:\nonexistent\fixassist.log`)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if out, err := run(ctx, "", nil, "schtasks", "/Create", "/TN", "FixAssistXMLCheck", "/XML", f, "/F"); err != nil {
+		t.Fatalf("schtasks rejected the XML: %v %s", err, out)
+	}
+	if _, err := run(ctx, "", nil, "schtasks", "/Delete", "/TN", "FixAssistXMLCheck", "/F"); err != nil {
+		t.Fatalf("couldn't delete the check task: %v", err)
 	}
 }

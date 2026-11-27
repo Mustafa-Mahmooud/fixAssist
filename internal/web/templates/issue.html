@@ -143,14 +143,14 @@
 
 {{define "autofix_box"}}
 {{$af := .Data.Autofix}}{{$p := .Data.Project}}{{$i := .Data.Issue}}{{$csrf := .Session.CSRF}}
-<div id="autofix" class="notice" style="margin-top:1rem">
+<div id="autofix" class="notice" style="margin-top:1rem" data-live="10">
   <h3 style="margin-top:0">Or let Claude Code fix it on its own</h3>
   {{if $af.Open}}{{with $af.Run}}
     <p class="status-line"><span class="dot {{if eq .State "pr_opened" "merge_approved"}}ok{{else}}warn{{end}}"></span><b>{{autofixState .State}}</b>{{if eq .State "pr_opened"}}{{if .AutoMerge}}: it merges once your checks pass.{{else}}: review and merge it on GitHub.{{end}}{{end}}</p>
     {{if .PrUrl}}<p><a class="button secondary" href="{{.PrUrl}}" rel="noopener">Review the pull request</a></p>{{end}}
     {{if .Summary}}<p class="muted small">What the agent changed: {{code .Summary}}</p>{{end}}
     {{if .Error}}<p class="muted small">{{.Error}}</p>{{end}}
-    {{if and (eq .State "approved") (not $af.Online)}}<p class="muted small">The daemon on your computer is offline. Start it with <code>fixassist watch</code>, or we'll email you the fix to paste in a few minutes.</p>{{end}}
+    {{if and (eq .State "approved") (not $af.Online)}}<p class="muted small">The daemon on your computer is offline. Turn your computer on, or run <code>fixassist install</code> so it keeps running; otherwise we'll email you the fix to paste in a few minutes.</p>{{end}}
     {{if not $.Session.StaffView}}
     <div class="row">
       {{if eq .State "pending_approval"}}
@@ -167,7 +167,7 @@
   {{end}}{{else}}
     {{with $af.Run}}<p class="muted small">Last auto-fix: {{autofixState .State}}{{if .PrUrl}} (<a href="{{.PrUrl}}" rel="noopener">pull request</a>){{end}}{{if .Error}}. {{.Error}}{{end}}</p>{{end}}
     {{if $af.Enabled}}
-      <p class="muted">Claude Code fixes it in a separate branch on your computer, opens a pull request and merges it once your checks pass.{{if not $af.Online}} <b>Your daemon is offline</b>: start <code>fixassist watch</code>.{{end}}</p>
+      <p class="muted">Claude Code fixes it in a separate branch on your computer, opens a pull request and merges it once your checks pass.{{if not $af.Online}} <b>Your daemon is offline</b>: is your computer on? <code>fixassist status</code> shows what it is doing.{{end}}</p>
       {{if not $.Session.StaffView}}
       <form method="post" action="/projects/{{$p.ID}}/issues/{{$i.ID}}/autofix"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" data-busy="Starting…">Auto-fix this</button></form>
       {{end}}

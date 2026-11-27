@@ -102,7 +102,7 @@ func (n *Notifier) AutofixOffline(ctx context.Context, r db.AutofixRun) error {
 		Label:     "Auto-fix",
 		Tone:      "warn",
 		Heading:   s.Title,
-		Paras: []string{"You approved an auto-fix, but the Fix Assistant daemon on your computer hasn't been online for 10 minutes. Start it with `fixassist watch`, or paste this fix yourself.",
+		Paras: []string{"You approved an auto-fix, but the Fix Assistant daemon on your computer hasn't been online for 10 minutes. Check that your computer is on and run `fixassist status` (or `fixassist install` to keep it running), or paste this fix yourself.",
 			s.WhatBroke},
 		CodeLabel: "Paste this into " + agentName(is.TargetAgent) + ":",
 		Code:      prompt,

@@ -8,8 +8,15 @@ The [agent loop](agent-loop.md) only runs when the founder asks their coding age
 
   ```
   fixassist add --server https://fix.example.com --token fa_... --repo ~/code/shop [--base main] [--test "npm ci && npm test"]
-  fixassist watch
+  fixassist install   # or: fixassist watch, in a terminal you keep open
   ```
+
+  `fixassist install` runs `watch --log <config dir>/fixassist/fixassist.log` in the background. It starts at login with no window and is restarted when it stops. `fixassist status` shows whether it's installed and the latest log lines; `fixassist uninstall` removes it. ([service.go](../cmd/fixassist/service.go))
+  - **Windows:** a Task Scheduler logon task named `FixAssist`, launched through `conhost --headless` so no window opens. It has no time limit, keeps running on battery, and restarts on failure.
+  - **macOS:** a launchd agent `com.fixassist.watch` with `KeepAlive`.
+  - **Linux:** a systemd user service `fixassist.service` with `Restart=always`.
+
+  The macOS and Linux definitions copy the current `PATH`, so `claude`, `git` and `gh` are found. In background mode, `watch` itself also retries every minute after a startup error or a crash, because Windows' `conhost` reports success even when the program fails. A crash on one app's task restarts only that app's loop.
 
   It authenticates with the project's existing agent token. The config file (`os.UserConfigDir()/fixassist/config.json`, or `FIXASSIST_CONFIG`) is readable by the founder only.
 - **Runs, [internal/autofix](../internal/autofix).** One `autofix_runs` row per attempt ([migration 00015](../internal/store/migrations/00015_autofix.sql)).

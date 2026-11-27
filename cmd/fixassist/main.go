@@ -14,12 +14,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -89,8 +91,15 @@ func usage() {
       Show the connected apps.
   fixassist remove --repo PATH
       Disconnect an app.
-  fixassist watch
+  fixassist watch [--log FILE]
       Wait for approved auto-fixes and work on them. Leave it running.
+  fixassist install
+      Run watch in the background: from now on at every login, no window,
+      restarted if it stops. Logs go to the file status shows.
+  fixassist status
+      Whether the background watcher is installed, and its latest log lines.
+  fixassist uninstall
+      Stop the background watcher and don't start it at login any more.
   fixassist version
 
 Needs Claude Code (claude), git and the GitHub CLI (gh, signed in with gh auth login).
@@ -112,6 +121,12 @@ func main() {
 		err = cmdRemove(os.Args[2:])
 	case "watch":
 		err = cmdWatch(os.Args[2:])
+	case "install":
+		err = cmdInstall()
+	case "uninstall":
+		err = cmdUninstall()
+	case "status":
+		err = cmdStatus()
 	case "version", "--version":
 		fmt.Println("fixassist", version)
 	case "help", "-h", "--help":
@@ -216,7 +231,50 @@ func cmdRemove(args []string) error {
 
 func cmdWatch(args []string) error {
 	fs := flag.NewFlagSet("watch", flag.ExitOnError)
+	logPath := fs.String("log", "", "append output to this file instead of the terminal (used by install)")
 	_ = fs.Parse(args)
+	if *logPath != "" {
+		f, err := openLog(*logPath)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		out = f
+		// In the background nobody sees errors, and the service manager
+		// can't always tell it stopped (Windows' conhost reports success),
+		// so retry here: log what went wrong, wait a minute, try again. A
+		// missing tool or a signed-out gh then fixes itself once installed.
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		for {
+			err := watchSafely()
+			if ctx.Err() != nil {
+				return nil
+			}
+			logf("stopped: %v (retrying in a minute)", err)
+			sleep(ctx, time.Minute)
+			if ctx.Err() != nil {
+				return nil
+			}
+		}
+	}
+	return watch()
+}
+
+// watchSafely is watch, with a crash turned into an error.
+func watchSafely() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("crashed: %v", r)
+		}
+	}()
+	if err = watch(); err == nil {
+		err = errors.New("watch ended")
+	}
+	return err
+}
+
+func watch() error {
 	cfg, _, err := loadConfig()
 	if err != nil {
 		return err
@@ -229,7 +287,7 @@ func cmdWatch(args []string) error {
 			return fmt.Errorf("%s isn't installed or isn't on PATH", tool)
 		}
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if _, err := run(ctx, "", nil, "gh", "auth", "status"); err != nil {
 		return errors.New("the GitHub CLI isn't signed in: run gh auth login")
@@ -240,13 +298,45 @@ func cmdWatch(args []string) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			(&worker{p: p, c: newClient(p)}).loop(ctx)
+			// A crash on one app's task must not stop the others: log it
+			// and start that app's loop again.
+			for ctx.Err() == nil {
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							logf("[%s] crashed: %v (restarting)", p.Name, r)
+							sleep(ctx, 10*time.Second)
+						}
+					}()
+					(&worker{p: p, c: newClient(p)}).loop(ctx)
+				}()
+			}
 		}()
 	}
 	wg.Wait()
 	return nil
 }
 
+// out is where watch writes: the terminal, or the log file.
+var out io.Writer = os.Stdout
+
+var outMu sync.Mutex
+
 func logf(format string, args ...any) {
-	fmt.Printf("%s %s\n", time.Now().Format("15:04:05"), fmt.Sprintf(format, args...))
+	outMu.Lock()
+	defer outMu.Unlock()
+	fmt.Fprintf(out, "%s %s\n", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))
+}
+
+// maxLog is when the log starts over (the previous one is kept as .old).
+const maxLog = 5 << 20
+
+func openLog(path string) (*os.File, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, err
+	}
+	if st, err := os.Stat(path); err == nil && st.Size() > maxLog {
+		_ = os.Rename(path, path+".old")
+	}
+	return os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 }

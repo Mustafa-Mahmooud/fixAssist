@@ -141,9 +141,10 @@
   <p class="muted small"><b>1.</b> Create an agent token above, then connect the daemon to this app's repository:</p>
   <div class="copy-wrap">
     <pre id="autofix-setup">fixassist add --server {{$.Data.ServerURL}} --token {{if $.Data.NewToken}}{{$.Data.NewToken}}{{else}}&lt;your agent token&gt;{{end}} --repo /path/to/your/app
-fixassist watch</pre>
+fixassist install</pre>
     <button type="button" class="secondary" data-copy="#autofix-setup"><span class="label">Copy</span></button>
   </div>
+  <p class="muted small"><code>fixassist install</code> keeps it running in the background with no window: it starts by itself when you log in and restarts if it stops. <code>fixassist status</code> shows what it's doing; <code>fixassist uninstall</code> stops it.</p>
 
   <p class="muted small"><b>2.</b> Daemons:</p>
   {{if .Daemons}}
@@ -158,7 +159,7 @@ fixassist watch</pre>
     </table>
   </div>
   {{else}}
-  <p class="muted small">No daemon has connected yet. Run <code>fixassist watch</code>; it shows up here within a few seconds.</p>
+  <p class="muted small">No daemon has connected yet. Run <code>fixassist install</code>; it shows up here within a few seconds.</p>
   {{end}}
 
   <p class="muted small"><b>3.</b> Turn it on:</p>
