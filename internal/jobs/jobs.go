@@ -150,6 +150,16 @@ func (w *RollupWorker) Work(ctx context.Context, _ *river.Job[jobargs.RollupHour
 	return analytics.Run(ctx, w.Pool, time.Now())
 }
 
+// RollupTodayWorker rebuilds just today's rollups for the live dashboard.
+type RollupTodayWorker struct {
+	river.WorkerDefaults[jobargs.RollupToday]
+	Pool *pgxpool.Pool
+}
+
+func (w *RollupTodayWorker) Work(ctx context.Context, _ *river.Job[jobargs.RollupToday]) error {
+	return analytics.RollupDay(ctx, w.Pool, time.Now().UTC())
+}
+
 // VerifyWorker runs the implicit verification rules.
 type VerifyWorker struct {
 	river.WorkerDefaults[jobargs.VerifyFixes]
@@ -222,6 +232,7 @@ func NewClientWith(d Deps) (*river.Client[pgx.Tx], error) {
 	river.AddWorker(workers, &DigestWorker{Notifier: d.Notifier, Log: d.Log})
 	river.AddWorker(workers, &VerifyWorker{Pool: d.Pool, Log: d.Log})
 	river.AddWorker(workers, &RollupWorker{Pool: d.Pool})
+	river.AddWorker(workers, &RollupTodayWorker{Pool: d.Pool})
 
 	cfg := &river.Config{Workers: workers, Logger: d.Log.With("component", "river")}
 	if d.RunWorkers {
@@ -242,6 +253,9 @@ func NewClientWith(d Deps) (*river.Client[pgx.Tx], error) {
 			river.NewPeriodicJob(river.PeriodicInterval(time.Hour),
 				func() (river.JobArgs, *river.InsertOpts) { return jobargs.RollupHourly{}, nil },
 				&river.PeriodicJobOpts{RunOnStart: true}),
+			river.NewPeriodicJob(river.PeriodicInterval(time.Minute),
+				func() (river.JobArgs, *river.InsertOpts) { return jobargs.RollupToday{}, nil },
+				nil),
 			river.NewPeriodicJob(river.PeriodicInterval(15*time.Minute),
 				func() (river.JobArgs, *river.InsertOpts) { return jobargs.VerifyFixes{}, nil },
 				&river.PeriodicJobOpts{RunOnStart: true}),

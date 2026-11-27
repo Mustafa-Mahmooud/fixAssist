@@ -78,6 +78,18 @@ func (RollupHourly) Kind() string { return "rollup_hourly" }
 
 func (RollupHourly) InsertOpts() river.InsertOpts { return river.InsertOpts{Queue: QueueMaintenance} }
 
+// RollupToday rebuilds only today's rollups (every minute), so the
+// dashboard's live pages show new visits within about a minute. It shares
+// the single-worker maintenance queue with RollupHourly, so the two never
+// rebuild the same day at once.
+type RollupToday struct{}
+
+func (RollupToday) Kind() string { return "rollup_today" }
+
+func (RollupToday) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{Queue: QueueMaintenance, UniqueOpts: river.UniqueOpts{ByPeriod: time.Minute}}
+}
+
 // Partitions runs partition maintenance.
 type Partitions struct{}
 
