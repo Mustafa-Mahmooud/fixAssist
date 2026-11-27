@@ -11,6 +11,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countInsights = `-- name: CountInsights :one
+select count(*) from growth_insights where project_id = $1
+`
+
+func (q *Queries) CountInsights(ctx context.Context, projectID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countInsights, projectID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteFunnel = `-- name: DeleteFunnel :execrows
 delete from funnels where id = $1 and project_id = $2
 `
@@ -272,30 +283,19 @@ func (q *Queries) ListGoals(ctx context.Context, projectID int64) ([]ListGoalsRo
 	return items, nil
 }
 
-const countInsights = `-- name: CountInsights :one
-select count(*) from growth_insights where project_id = $1
-`
-
-func (q *Queries) CountInsights(ctx context.Context, projectID int64) (int64, error) {
-	row := q.db.QueryRow(ctx, countInsights, projectID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const listInsights = `-- name: ListInsights :many
 
 select id, week, detector, title, evidence, hypothesis, fix_prompt, how_to_check, metric,
        baseline::float8 as baseline, (after_value is not null)::boolean as has_after,
        coalesce(after_value, 0)::float8 as after_value, outcome, outcome_source, created_at
 from growth_insights where project_id = $1 order by week desc, id
-limit $2 offset $3
+limit $3 offset $2
 `
 
 type ListInsightsParams struct {
 	ProjectID int64
-	Lim       int32
 	Off       int32
+	Lim       int32
 }
 
 type ListInsightsRow struct {
@@ -318,7 +318,7 @@ type ListInsightsRow struct {
 
 // Growth insights -----------------------------------------------------------
 func (q *Queries) ListInsights(ctx context.Context, arg ListInsightsParams) ([]ListInsightsRow, error) {
-	rows, err := q.db.Query(ctx, listInsights, arg.ProjectID, arg.Lim, arg.Off)
+	rows, err := q.db.Query(ctx, listInsights, arg.ProjectID, arg.Off, arg.Lim)
 	if err != nil {
 		return nil, err
 	}

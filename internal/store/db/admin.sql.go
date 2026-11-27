@@ -59,12 +59,12 @@ select p.id, p.name, o.name as org_name,
   (select count(*) from fix_feedback f join issues i on i.id = f.issue_id where i.project_id = p.id and f.outcome = 'failed')::bigint as failed
 from projects p join orgs o on o.id = p.org_id
 order by events_24h desc, p.id
-limit $1 offset $2
+limit $2 offset $1
 `
 
 type AdminIngestByProjectParams struct {
-	Lim int32
 	Off int32
+	Lim int32
 }
 
 type AdminIngestByProjectRow struct {
@@ -81,7 +81,7 @@ type AdminIngestByProjectRow struct {
 }
 
 func (q *Queries) AdminIngestByProject(ctx context.Context, arg AdminIngestByProjectParams) ([]AdminIngestByProjectRow, error) {
-	rows, err := q.db.Query(ctx, adminIngestByProject, arg.Lim, arg.Off)
+	rows, err := q.db.Query(ctx, adminIngestByProject, arg.Off, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
@@ -152,37 +152,15 @@ func (q *Queries) AdminOldestAvailable(ctx context.Context) ([]AdminOldestAvaila
 	return items, nil
 }
 
-const countQuarantined = `-- name: CountQuarantined :one
-select count(*) from knowledge_entries where quarantined_at is not null
-`
-
-func (q *Queries) CountQuarantined(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countQuarantined)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countProjects = `-- name: CountProjects :one
-select count(*) from projects
-`
-
-func (q *Queries) CountProjects(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countProjects)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const adminQuarantined = `-- name: AdminQuarantined :many
 select id, signature, catalog_key, worked, failed, confidence::float8 as confidence, quarantined_at
 from knowledge_entries where quarantined_at is not null order by quarantined_at desc
-limit $1 offset $2
+limit $2 offset $1
 `
 
 type AdminQuarantinedParams struct {
-	Lim int32
 	Off int32
+	Lim int32
 }
 
 type AdminQuarantinedRow struct {
@@ -196,7 +174,7 @@ type AdminQuarantinedRow struct {
 }
 
 func (q *Queries) AdminQuarantined(ctx context.Context, arg AdminQuarantinedParams) ([]AdminQuarantinedRow, error) {
-	rows, err := q.db.Query(ctx, adminQuarantined, arg.Lim, arg.Off)
+	rows, err := q.db.Query(ctx, adminQuarantined, arg.Off, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
@@ -322,4 +300,26 @@ func (q *Queries) AdminUnquarantine(ctx context.Context, id int64) (int64, error
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const countProjects = `-- name: CountProjects :one
+select count(*) from projects
+`
+
+func (q *Queries) CountProjects(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countProjects)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countQuarantined = `-- name: CountQuarantined :one
+select count(*) from knowledge_entries where quarantined_at is not null
+`
+
+func (q *Queries) CountQuarantined(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countQuarantined)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }

@@ -483,13 +483,13 @@ func (q *Queries) LatestAutofixRun(ctx context.Context, issueID int64) (AutofixR
 const listAutofixRuns = `-- name: ListAutofixRuns :many
 select r.id, r.project_id, r.issue_id, r.suggestion_id, r.state, r.approved_by, r.approved_user_id, r.approved_at, r.auto_merge, r.token_id, r.claimed_at, r.lease_until, r.branch, r.pr_url, r.summary, r.files, r.error, r.created_at, r.updated_at, i.title as issue_title from autofix_runs r join issues i on i.id = r.issue_id
 where r.project_id = $1 order by r.created_at desc, r.id desc
-limit $2 offset $3
+limit $3 offset $2
 `
 
 type ListAutofixRunsParams struct {
 	ProjectID int64
-	Lim       int32
 	Off       int32
+	Lim       int32
 }
 
 type ListAutofixRunsRow struct {
@@ -516,7 +516,7 @@ type ListAutofixRunsRow struct {
 }
 
 func (q *Queries) ListAutofixRuns(ctx context.Context, arg ListAutofixRunsParams) ([]ListAutofixRunsRow, error) {
-	rows, err := q.db.Query(ctx, listAutofixRuns, arg.ProjectID, arg.Lim, arg.Off)
+	rows, err := q.db.Query(ctx, listAutofixRuns, arg.ProjectID, arg.Off, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
