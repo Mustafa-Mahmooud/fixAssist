@@ -340,6 +340,7 @@ p.kind { display: flex; flex-wrap: wrap; gap: .4rem; }
 .status-line { display: flex; align-items: center; gap: .6rem; }
 .dot { width: .65rem; height: .65rem; flex: none; border-radius: 50%; background: var(--warn); animation: pulse 1.2s infinite; }
 .dot.ok { background: var(--ok); animation: none; box-shadow: 0 0 0 4px var(--ok-soft); }
+.dot.bad { background: var(--bad); animation: none; box-shadow: 0 0 0 4px var(--bad-soft); }
 @keyframes pulse { 50% { opacity: .3; } }
 
 /* ---------- Messages ---------- */

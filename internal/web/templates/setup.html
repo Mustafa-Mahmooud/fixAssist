@@ -257,6 +257,17 @@ fixassist install</pre>
     <button type="submit" class="secondary" data-busy="Saving…">Save</button>
   </form>
 
+  <form method="post" action="/projects/{{$.Data.Project.ID}}/autofix/branch" id="autofix-branch">
+    <input type="hidden" name="csrf" value="{{$.Session.CSRF}}">
+    <p><label for="autofix-branch-name" style="margin:0">Branch to fix from</label>
+      <span class="row" style="gap:.5rem">
+        <input id="autofix-branch-name" type="text" name="branch" value="{{.Branch}}" maxlength="200" placeholder="Your default branch" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:auto;flex:1;min-width:12rem">
+        <button type="submit" class="secondary" data-busy="Saving…">Save</button>
+      </span></p>
+    {{with .OldDaemon}}<p class="small"><b>Your fixassist is v{{.}}</b>, which ignores this setting and keeps the branch it was set up with. Update it to v{{$.Data.BranchDaemon}} or later with the install command above (it replaces the running one), then this branch is used.</p>{{end}}
+    <p class="muted small">Fixes start from the latest version of this branch on GitHub, and pull requests go into it. Leave it empty to use the branch fixassist was set up with. Code that's only on your computer (not pushed) can't be fixed.</p>
+  </form>
+
   {{if .Runs}}
   <h3>Recent auto-fixes</h3>
   <div class="table-wrap">

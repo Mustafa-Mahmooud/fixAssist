@@ -166,11 +166,34 @@
     </div>
     {{end}}
   {{end}}{{else}}
-    {{with $af.Run}}<p class="muted small">Last auto-fix: {{autofixState .State}}{{if .PrUrl}} (<a href="{{.PrUrl}}" rel="noopener">pull request</a>){{end}}{{if .Error}}. {{.Error}}{{end}}</p>{{end}}
+    {{$failed := false}}
+    {{with $af.Run}}{{if eq .State "failed"}}{{$failed = true}}{{end}}
+      {{if eq .FailReason "not_in_repo"}}
+      <p class="status-line"><span class="dot bad"></span><b>Auto-fix couldn't find the code behind this error</b></p>
+      <p class="muted small">{{.Error}}</p>
+      <p class="muted small">Usually one of these:</p>
+      <ul class="muted small">
+        <li>The code isn't pushed or committed yet: auto-fix only sees what's on GitHub.</li>
+        <li>It's on another branch. Auto-fix uses {{if $af.Branch}}<code>{{$af.Branch}}</code>{{else}}the branch fixassist was set up with{{end}}: <a href="/projects/{{$p.ID}}/setup#autofix-branch">change the branch</a>.{{with $af.OldDaemon}} Your fixassist is v{{.}}, which ignores that setting: <a href="/projects/{{$p.ID}}/setup#autofix">update it</a> first.{{end}}</li>
+        <li>The error comes from a different app, a library or an outside service.</li>
+      </ul>
+      <p class="muted small">Push the code or change the branch, then try again. If you know where it is, tell the agent below.</p>
+      {{else}}
+      <p class="muted small">Last auto-fix: {{autofixState .State}}{{if .PrUrl}} (<a href="{{.PrUrl}}" rel="noopener">pull request</a>){{end}}{{if .Error}}. {{.Error}}{{end}}</p>
+      {{end}}
+    {{end}}
     {{if $af.Enabled}}
-      <p class="muted">Claude Code fixes it in a separate branch on your computer, opens a pull request and merges it once your checks pass.{{if not $af.Online}} <b>Your daemon is offline</b>: is your computer on? <code>fixassist status</code> shows what it is doing.{{end}}</p>
+      {{if not $failed}}<p class="muted">Claude Code fixes it in a separate branch on your computer, opens a pull request and merges it once your checks pass.{{if not $af.Online}} <b>Your daemon is offline</b>: is your computer on? <code>fixassist status</code> shows what it is doing.{{end}}</p>{{end}}
       {{if not $.Session.StaffView}}
-      <form method="post" action="/projects/{{$p.ID}}/issues/{{$i.ID}}/autofix"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" data-busy="Starting…">Auto-fix this</button></form>
+      <form method="post" action="/projects/{{$p.ID}}/issues/{{$i.ID}}/autofix">
+        <input type="hidden" name="csrf" value="{{$csrf}}">
+        <details{{if $failed}} open{{end}}>
+          <summary>{{if $failed}}Tell the agent where to look{{else}}Add a note for the agent{{end}}</summary>
+          <label for="autofix-hint" class="muted small">Optional. For example: “It's in Controllers/LearningErrors.cs” or “The form is in src/pages/Signup.tsx”.</label>
+          <textarea id="autofix-hint" name="hint" rows="3" maxlength="{{$af.MaxHint}}"></textarea>
+        </details>
+        <button type="submit" data-busy="Starting…">{{if $failed}}Try again{{else}}Auto-fix this{{end}}</button>
+      </form>
       {{end}}
     {{else}}
       <p class="muted small">Claude Code can fix high-impact issues like this one on its own and open a pull request. <a href="/projects/{{$p.ID}}/setup#autofix">Set up auto-fix</a>.</p>

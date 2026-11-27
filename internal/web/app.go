@@ -112,6 +112,7 @@ func (a *App) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /f/{sid}/{outcome}", a.feedbackLinkSubmit)
 	mux.Handle("POST /projects/{id}/autofix", a.signedIn(a.setAutofix))
 	mux.Handle("POST /projects/{id}/autofix/pair", a.signedIn(a.autofixPair))
+	mux.Handle("POST /projects/{id}/autofix/branch", a.signedIn(a.setAutofixBranch))
 	mux.Handle("POST /projects/{id}/issues/{issue}/autofix", a.signedIn(a.startAutofix))
 	mux.Handle("POST /projects/{id}/autofix/{run}/reject", a.signedIn(a.rejectAutofix))
 	mux.Handle("POST /projects/{id}/autofix/{run}/merge", a.signedIn(a.approveAutofixMerge))
@@ -423,7 +424,7 @@ func (a *App) renderSetup(w http.ResponseWriter, r *http.Request, p db.GetOrgPro
 		return
 	}
 	a.render(w, 200, "setup", page{Title: "Setup", Session: sessionFrom(r), Data: map[string]any{
-		"Autofix": af, "ServerURL": strings.TrimRight(a.BaseURL, "/"),
+		"Autofix": af, "BranchDaemon": BranchDaemon, "ServerURL": strings.TrimRight(a.BaseURL, "/"),
 		"Allowed": r.URL.Query().Get("allowed"), "BuilderSteps": BuilderSteps(p.TargetAgent),
 		"PairCode": once.PairCode, "TokenFor": once.For,
 		"AgentTools": agentTools, "Deeplink": AgentDeeplink(once.For, mcpURL, newToken),

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/yourname/fixassist/internal/autofix"
 	"github.com/yourname/fixassist/internal/store/db"
@@ -29,6 +30,9 @@ type Task struct {
 	Branch           string `json:"branch"`
 	PRURL            string `json:"pr_url,omitempty"`
 	AutoMergeAllowed bool   `json:"auto_merge_allowed"` // a person approved this run
+	// Base is the branch to fix from, set on the Setup page; "" means the
+	// daemon's own (fixassist add --base). Daemons before 0.3.0 ignore it.
+	Base string `json:"base,omitempty"`
 }
 
 // ClaimArgs is the daemon's poll.
@@ -53,10 +57,15 @@ func (h *Handler) touchDaemon(r *http.Request, c caller, hostname, version strin
 
 func clip(s string, n int) string {
 	s = strings.TrimSpace(s)
-	if len(s) > n {
-		return s[:n]
+	if len(s) <= n {
+		return s
 	}
-	return s
+	// Cut on a character boundary: half a character isn't valid UTF-8,
+	// and Postgres refuses it.
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 func (h *Handler) restClaim(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +88,7 @@ func (h *Handler) restClaim(w http.ResponseWriter, r *http.Request) {
 				t, err := h.task(r, c, kind, run)
 				if err != nil {
 					// The task couldn't be prepared: don't leave it claimed.
-					_ = autofix.MarkFailed(r.Context(), h.Pool, c.ProjectID, run.ID, "Fix Assistant couldn't prepare the fix prompt.")
+					_ = autofix.MarkFailed(r.Context(), h.Pool, c.ProjectID, run.ID, "Fix Assistant couldn't prepare the fix prompt.", "")
 					return nil, err
 				}
 				h.Log.Info("auto-fix claimed", "project_id", c.ProjectID, "run_id", run.ID, "kind", kind, "token_id", c.TokenID)
@@ -107,6 +116,13 @@ func (h *Handler) task(r *http.Request, c caller, kind string, run db.AutofixRun
 	if run.Branch != "" {
 		t.Branch = run.Branch
 	}
+	set, err := db.New(h.Pool).ProjectAutofix(r.Context(), c.ProjectID)
+	if err != nil {
+		return Task{}, err
+	}
+	if autofix.ValidBranch(set.AutofixBranch) {
+		t.Base = set.AutofixBranch
+	}
 	if kind == autofix.TaskMerge {
 		t.AutoMergeAllowed = true // a person approved the diff
 		return t, nil
@@ -115,7 +131,7 @@ func (h *Handler) task(r *http.Request, c caller, kind string, run db.AutofixRun
 	if err != nil {
 		return Task{}, err
 	}
-	t.Prompt = AutofixPrompt(c.Project, v)
+	t.Prompt = AutofixPrompt(c.Project, v, run.Hint)
 	return t, nil
 }
 
@@ -133,7 +149,10 @@ func fence(s string) string {
 // instructions are ours; everything recorded in production (error messages,
 // stack lines, URLs, and the fix prompt built from them) is fenced off as
 // data, because the app's visitors can put any text in it.
-func AutofixPrompt(project string, v IssueView) string {
+//
+// hint is the founder's own note for this run ("" for none). It's theirs,
+// not a visitor's, so it goes with the instructions, outside the fence.
+func AutofixPrompt(project string, v IssueView, hint string) string {
 	var e strings.Builder
 	fmt.Fprintf(&e, "Issue #%d: %s\n%s on %s, %d times, %d people, first %s, last %s\n", v.ID, v.Title, kindName(v.Kind), orBackground(v.Route), v.Events, v.Users, when(v.FirstSeen), when(v.LastSeen))
 	fmt.Fprintf(&e, "\nWhat broke:\n%s\n\nWho is affected:\n%s\n", v.WhatBroke, v.Who)
@@ -164,7 +183,11 @@ func AutofixPrompt(project string, v IssueView) string {
 	b.WriteString("3. Don't commit, push, deploy or open pull requests, and don't call Fix Assistant's report_fix: the Fix Assistant daemon does that after you finish.\n")
 	b.WriteString("4. Don't edit .github/, CI or deployment configuration, lock files, or .env files.\n")
 	b.WriteString("5. You can read, search and edit files in this repository, nothing else (no shell). The daemon runs the tests after you finish, so keep existing tests passing; add a test for this error if it's simple to do.\n")
-	b.WriteString("6. When you're done, end your reply with one line: SUMMARY: <what you changed and why, in a sentence or two>. If you can't find a safe fix, change nothing and end with: CANNOT_FIX: <why>.\n\n")
+	b.WriteString("6. When you're done, end your reply with one line: SUMMARY: <what you changed and why, in a sentence or two>. If you can't find a safe fix, change nothing and end with: CANNOT_FIX: <why>.\n")
+	b.WriteString("7. If the code that raises this error isn't in this repository at all (no file has its route, its message or the functions in its stack), change nothing and end with: CANNOT_FIX: " + autofix.NotInRepoTag + ": <the routes, messages and names you searched for>.\n\n")
+	if hint = strings.TrimSpace(hint); hint != "" {
+		fmt.Fprintf(&b, "The app's owner adds this note for this run. It's theirs, not a visitor's, so use it:\n%s\n\n", fence(hint))
+	}
 	fmt.Fprintf(&b, "<%s>\n%s</%s>\n", evidenceTag, fence(e.String()), evidenceTag)
 	return b.String()
 }
@@ -203,6 +226,7 @@ type RunEvent struct {
 	RequiredChecks bool      `json:"required_checks"`
 	AutoMerge      bool      `json:"auto_merge"`
 	Message        string    `json:"message"`
+	Reason         string    `json:"reason"` // failed: why, when known (not_in_repo)
 	MergedAt       time.Time `json:"merged_at"`
 }
 
@@ -230,7 +254,7 @@ func (h *Handler) restRunEvent(w http.ResponseWriter, r *http.Request) {
 		case "merged":
 			_, err = autofix.MarkMerged(ctx, h.Pool, c.ProjectID, id, c.TokenID, e.MergedAt, now)
 		case "failed":
-			err = autofix.MarkFailed(ctx, h.Pool, c.ProjectID, id, e.Message)
+			err = autofix.MarkFailed(ctx, h.Pool, c.ProjectID, id, e.Message, e.Reason)
 		case "note":
 			err = autofix.Note(ctx, h.Pool, c.ProjectID, id, e.Message)
 		default:

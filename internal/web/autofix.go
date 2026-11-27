@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -156,6 +157,24 @@ func (a *App) setAutofix(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/projects/"+strconv.FormatInt(p.ID, 10)+"/setup#autofix", http.StatusSeeOther)
 }
 
+// setAutofixBranch is Setup's "Branch to fix from" (empty: the daemon's own).
+func (a *App) setAutofixBranch(w http.ResponseWriter, r *http.Request) {
+	p, ok := a.autofixProject(w, r)
+	if !ok {
+		return
+	}
+	err := autofix.SetBranch(r.Context(), a.Pool, p.ID, r.PostFormValue("branch"))
+	if errors.Is(err, autofix.ErrBadBranch) {
+		http.Error(w, "That isn't a branch name auto-fix can use: letters, digits and . _ / - + only.", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	http.Redirect(w, r, "/projects/"+strconv.FormatInt(p.ID, 10)+"/setup#autofix", http.StatusSeeOther)
+}
+
 func (a *App) backToIssue(w http.ResponseWriter, r *http.Request, projectID, issueID int64) {
 	http.Redirect(w, r, fmt.Sprintf("/projects/%d/issues/%d#autofix", projectID, issueID), http.StatusSeeOther)
 }
@@ -180,7 +199,7 @@ func (a *App) startAutofix(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Turn auto-fix on in Setup first.", http.StatusConflict)
 		return
 	}
-	if _, err := autofix.Start(r.Context(), a.Pool, p.ID, is.ID, sessionFrom(r).UserID, time.Now()); err != nil && !errors.Is(err, autofix.ErrNotAllowed) {
+	if _, err := autofix.Start(r.Context(), a.Pool, p.ID, is.ID, sessionFrom(r).UserID, r.PostFormValue("hint"), time.Now()); err != nil && !errors.Is(err, autofix.ErrNotAllowed) {
 		a.fail(w, err)
 		return
 	}
@@ -259,8 +278,43 @@ func (a *App) autofixSetup(r *http.Request, projectID int64) (map[string]any, er
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"Enabled": set.AutofixEnabled, "Rule": set.AutofixRule, "Daemons": daemons, "Online": online,
+	return map[string]any{"Enabled": set.AutofixEnabled, "Rule": set.AutofixRule, "Branch": set.AutofixBranch, "OldDaemon": oldDaemon(rows), "Daemons": daemons, "Online": online,
 		"Runs": runs, "RunsPager": pg, "Downloads": DownloadFiles}, nil
+}
+
+// BranchDaemon is the first fixassist that fixes from the branch set on the
+// Setup page; older ones keep the branch they were set up with.
+const BranchDaemon = "0.3.0"
+
+// oldDaemon is the version of a recently seen daemon that is older than
+// BranchDaemon, or "". Versions it can't read (a dev build) count as new.
+func oldDaemon(rows []db.ProjectDaemonsRow) string {
+	for _, d := range rows {
+		if time.Since(d.LastSeenAt.Time) < 24*time.Hour && olderThan(d.Version, BranchDaemon) {
+			return d.Version
+		}
+	}
+	return ""
+}
+
+// olderThan compares dotted versions ("0.2.1" < "0.3.0"); false when
+// either isn't one.
+func olderThan(v, than string) bool {
+	a, b := strings.Split(v, "."), strings.Split(than, ".")
+	if len(a) != 3 || len(b) != 3 {
+		return false
+	}
+	for i := range a {
+		x, err1 := strconv.Atoi(a[i])
+		y, err2 := strconv.Atoi(b[i])
+		if err1 != nil || err2 != nil {
+			return false
+		}
+		if x != y {
+			return x < y
+		}
+	}
+	return false
 }
 
 // autofixIssue is the issue page's auto-fix block.
@@ -274,7 +328,11 @@ func (a *App) autofixIssue(ctx context.Context, projectID, issueID int64) (map[s
 	if err != nil {
 		return nil, err
 	}
-	d := map[string]any{"Enabled": set.AutofixEnabled, "Online": online}
+	daemons, err := q.ProjectDaemons(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	d := map[string]any{"Enabled": set.AutofixEnabled, "Online": online, "Branch": set.AutofixBranch, "MaxHint": autofix.MaxHint, "OldDaemon": oldDaemon(daemons)}
 	run, err := q.LatestAutofixRun(ctx, issueID)
 	switch {
 	case err == nil:

@@ -41,11 +41,13 @@ The [agent loop](agent-loop.md) only runs when the founder asks their coding age
 1. An issue is explained (`AnalyzeWorker`) with severity `high`, and the project has auto-fix on. `autofix.Consider` creates a run. At most one run per issue can be in progress.
    - **Rule "ask me" (default):** the run is `pending_approval`, and the founder gets an email with **Auto-fix this**. The link opens a confirm page; only the POST approves, because mail scanners open links. There are at most 10 auto-fix emails per project per day.
    - **Rule "high":** the run is approved by the rule.
-   - **"Auto-fix this" on any issue page:** starts an approved run, whatever the severity.
+   - **"Auto-fix this" on any issue page:** starts an approved run, whatever the severity. The founder can add a note for the agent ("it's in `Controllers/LearningErrors.cs`"). The note goes into the prompt as the owner's instruction, outside the fenced visitor evidence, and is at most 1,000 characters.
 2. The daemon claims the oldest approved run. There is one run at a time per project (no daily limit), and none while auto-fix is off. A claim takes a 60-minute lease, and the daemon sends a heartbeat every 5 minutes.
 3. The daemon works on the run:
-   1. Fetches the base branch and creates a new **git worktree** on `fixassist/issue-N-run-M`, so the founder's checkout is never touched.
+   1. Fetches the base branch and creates a new **git worktree** on `fixassist/issue-N-run-M`, so the founder's checkout is never touched. The base branch is the one set on the Setup page (**Branch to fix from**), or else the one given to `fixassist add --base`. Both the server and the daemon check the name (letters, digits and `. _ / - +`; never starting with `-`), because it reaches `git` and `gh` as an argument.
    2. Runs `claude -p` with the prompt (see Safety below).
+      - **The code isn't there:** the prompt asks the agent to end with `CANNOT_FIX: NOT_IN_REPO: <what it searched for>`. The daemon (0.3.0 and later) fails the run with the reason `not_in_repo` and says where it looked: `origin/master (commit 6174f0a)`, plus anything in the local copy it couldn't see (another branch checked out, unpushed commits, uncommitted changes). Older daemons pass the agent's words on, and the server recognizes the tag in them.
+      - The issue page explains the likely causes (not pushed, another branch, another app) and offers **Try again** with a note for the agent.
    3. Checks the diff, runs the optional test command, then commits and pushes.
    4. Runs `gh pr create`.
 4. Merging:

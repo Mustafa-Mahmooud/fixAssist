@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -129,7 +130,12 @@ func (w *worker) fix(ctx context.Context, t *Task) {
 		}
 	}()
 
-	repo, remote, base := w.p.Repo, w.p.Remote, w.p.Base
+	repo, remote := w.p.Repo, w.p.Remote
+	base, err := w.baseFor(ctx, t)
+	if err != nil {
+		w.fail(t, "%v", err)
+		return
+	}
 	if _, err := git(ctx, repo, "fetch", remote, base); err != nil {
 		w.fail(t, "git fetch %s %s: %v", remote, base, err)
 		return
@@ -148,6 +154,10 @@ func (w *worker) fix(ctx context.Context, t *Task) {
 	}()
 
 	summary, err := w.agent(ctx, wt, t.Prompt)
+	if e, ok := asNotInRepo(err); ok {
+		w.failNotInRepo(ctx, t, e, remote, base)
+		return
+	}
 	if err != nil {
 		w.fail(t, "%v", err)
 		return
@@ -267,7 +277,11 @@ func parseAgent(out []byte) (string, error) {
 	for i := len(ls) - 1; i >= 0; i-- {
 		l := strings.Trim(ls[i], " *`_")
 		if s, ok := strings.CutPrefix(l, "CANNOT_FIX:"); ok {
-			return "", fmt.Errorf("The agent couldn't find a safe fix: %s", strings.Trim(s, " *`_"))
+			s = strings.Trim(s, " *`_")
+			if what, ok := strings.CutPrefix(s, notInRepoTag); ok {
+				return "", errNotInRepo{searched: strings.Trim(what, " :*`_")}
+			}
+			return "", fmt.Errorf("The agent couldn't find a safe fix: %s", s)
 		}
 		if s, ok := strings.CutPrefix(l, "SUMMARY:"); ok {
 			if s = strings.Trim(s, " *`_"); s != "" {
@@ -317,7 +331,12 @@ func secretIn(diff []byte, token string) string {
 
 // merge turns on auto-merge for a pull request a person approved.
 func (w *worker) merge(ctx context.Context, t *Task) {
-	if !requiredChecks(ctx, w.p.Repo, w.p.Base) {
+	base, err := w.baseFor(ctx, t)
+	if err != nil {
+		w.report(t, Event{Event: "note", Message: err.Error() + ". Merge the pull request on GitHub."})
+		return
+	}
+	if !requiredChecks(ctx, w.p.Repo, base) {
 		w.report(t, Event{Event: "note", Message: "The default branch doesn't require status checks, so auto-merge stays off. Merge the pull request on GitHub."})
 		return
 	}
@@ -478,10 +497,13 @@ func lastURL(out []byte) string {
 }
 
 func clip(s string, n int) string {
-	if len(s) > n {
-		return s[:n] + "…"
+	if len(s) <= n {
+		return s
 	}
-	return s
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "…"
 }
 
 func tail(b []byte, n int) string {

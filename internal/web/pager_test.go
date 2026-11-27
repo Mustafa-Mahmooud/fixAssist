@@ -47,3 +47,14 @@ func TestPagerLinks(t *testing.T) {
 		t.Errorf("apps: page %d next %v prev %q %q", q.Page, q.HasNext(), q.PrevURL(), q.PrevLabel())
 	}
 }
+
+func TestOlderThan(t *testing.T) {
+	for _, c := range []struct {
+		v    string
+		want bool
+	}{{"0.2.1", true}, {"0.1.0", true}, {"0.3.0", false}, {"0.3.1", false}, {"0.10.0", false}, {"1.0.0", false}, {"test", false}, {"", false}, {"0.2", false}} {
+		if got := olderThan(c.v, BranchDaemon); got != c.want {
+			t.Errorf("olderThan(%q) = %v", c.v, got)
+		}
+	}
+}

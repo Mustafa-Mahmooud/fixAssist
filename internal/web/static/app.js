@@ -296,6 +296,11 @@
   function interacting(region) {
     var a = document.activeElement;
     if (a && region.contains(a) && a.matches("input, select, textarea")) return true;
+    // Typed into and clicked away: a swap would throw the text away.
+    var edited = Array.prototype.some.call(region.querySelectorAll("textarea, input[type=text]"), function (el) {
+      return el.value !== el.defaultValue;
+    });
+    if (edited) return true;
     if (region.querySelector("button.busy, form[data-sending]")) return true;
     var s = window.getSelection && window.getSelection();
     if (s && !s.isCollapsed && s.anchorNode && region.contains(s.anchorNode)) return true;

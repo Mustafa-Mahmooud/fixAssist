@@ -130,6 +130,8 @@ type AutofixRun struct {
 	Error          string
 	CreatedAt      pgtype.Timestamptz
 	UpdatedAt      pgtype.Timestamptz
+	Hint           string
+	FailReason     string
 }
 
 type DailyClickStat struct {
@@ -457,6 +459,7 @@ type Project struct {
 	TrainingOptOut        bool
 	AutofixEnabled        bool
 	AutofixRule           string
+	AutofixBranch         string
 }
 
 type ProjectGithub struct {

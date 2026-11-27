@@ -1,7 +1,10 @@
 -- Auto-fix (internal/autofix) ----------------------------------------------
 
 -- name: ProjectAutofix :one
-select autofix_enabled, autofix_rule from projects where id = $1;
+select autofix_enabled, autofix_rule, autofix_branch from projects where id = $1;
+
+-- name: SetProjectAutofixBranch :exec
+update projects set autofix_branch = @branch where id = @id;
 
 -- name: SetProjectAutofix :exec
 update projects set autofix_enabled = @enabled, autofix_rule = @rule where id = @id;
@@ -27,8 +30,8 @@ select exists (
 
 -- name: InsertAutofixRun :one
 -- Nothing is inserted while another run for the issue is in progress.
-insert into autofix_runs (project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at)
-values (@project_id, @issue_id, @suggestion_id, @state, sqlc.narg(approved_by), sqlc.narg(approved_user_id), sqlc.narg(approved_at))
+insert into autofix_runs (project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, hint)
+values (@project_id, @issue_id, @suggestion_id, @state, sqlc.narg(approved_by), sqlc.narg(approved_user_id), sqlc.narg(approved_at), @hint)
 on conflict do nothing
 returning *;
 
@@ -51,7 +54,7 @@ select count(*) from autofix_runs where project_id = $1;
 
 -- name: ApproveAutofixRun :one
 update autofix_runs
-set state = 'approved', approved_by = 'user', approved_user_id = @user_id, approved_at = now(), updated_at = now()
+set state = 'approved', approved_by = 'user', approved_user_id = @user_id, approved_at = now(), hint = @hint, updated_at = now()
 where id = @id and project_id = @project_id and state = 'pending_approval'
 returning *;
 
@@ -113,7 +116,7 @@ where id = @id and project_id = @project_id and state in ('pr_opened', 'awaiting
 returning *;
 
 -- name: SetAutofixFailed :one
-update autofix_runs set state = 'failed', error = @error, lease_until = null, updated_at = now()
+update autofix_runs set state = 'failed', error = @error, fail_reason = @fail_reason, lease_until = null, updated_at = now()
 where id = @id and project_id = @project_id
   and state in ('claimed', 'pr_opened', 'awaiting_merge_approval', 'merge_approved')
 returning *;

@@ -23,6 +23,7 @@ type Task struct {
 	Branch           string `json:"branch"`
 	PRURL            string `json:"pr_url"`
 	AutoMergeAllowed bool   `json:"auto_merge_allowed"`
+	Base             string `json:"base"` // branch to fix from, set on the Setup page ("": this app's own)
 }
 
 // PRView is an open auto-fix pull request (agentapi.PRView).
@@ -43,6 +44,7 @@ type Event struct {
 	RequiredChecks bool      `json:"required_checks"`
 	AutoMerge      bool      `json:"auto_merge"`
 	Message        string    `json:"message,omitempty"`
+	Reason         string    `json:"reason,omitempty"` // failed: not_in_repo
 	MergedAt       time.Time `json:"merged_at,omitzero"`
 }
 

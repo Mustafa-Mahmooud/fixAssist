@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -119,9 +120,14 @@ func Consider(ctx context.Context, pool *pgxpool.Pool, issueID int64, s db.FixSu
 	return insert(ctx, q, p)
 }
 
+// MaxHint bounds the founder's note on a run.
+const MaxHint = 1000
+
 // Start is the founder's "Auto-fix this" on an issue page: an approved run
-// for the latest suggestion, whatever its severity.
-func Start(ctx context.Context, pool *pgxpool.Pool, projectID, issueID, userID int64, now time.Time) (db.AutofixRun, error) {
+// for the latest suggestion, whatever its severity. hint is the founder's
+// note for the agent ("it's in Controllers/LearningErrors.cs"), or "".
+func Start(ctx context.Context, pool *pgxpool.Pool, projectID, issueID, userID int64, hint string, now time.Time) (db.AutofixRun, error) {
+	hint = clip(strings.TrimSpace(hint), MaxHint)
 	q := db.New(pool)
 	is, ok, err := fixable(ctx, q, issueID)
 	if err != nil {
@@ -131,7 +137,7 @@ func Start(ctx context.Context, pool *pgxpool.Pool, projectID, issueID, userID i
 		return db.AutofixRun{}, ErrNotAllowed
 	}
 	if r, err := q.LatestAutofixRun(ctx, issueID); err == nil && r.State == PendingApproval {
-		return q.ApproveAutofixRun(ctx, db.ApproveAutofixRunParams{ID: r.ID, ProjectID: projectID, UserID: user(userID)})
+		return q.ApproveAutofixRun(ctx, db.ApproveAutofixRunParams{ID: r.ID, ProjectID: projectID, UserID: user(userID), Hint: hint})
 	}
 	s, err := q.LatestSuggestion(ctx, issueID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -142,7 +148,7 @@ func Start(ctx context.Context, pool *pgxpool.Pool, projectID, issueID, userID i
 	}
 	r, created, err := insert(ctx, q, db.InsertAutofixRunParams{ProjectID: projectID, IssueID: issueID,
 		SuggestionID: pgtype.Int8{Int64: s.ID, Valid: true}, State: Approved,
-		ApprovedBy: pgtype.Text{String: "user", Valid: true}, ApprovedUserID: user(userID), ApprovedAt: ts(now)})
+		ApprovedBy: pgtype.Text{String: "user", Valid: true}, ApprovedUserID: user(userID), ApprovedAt: ts(now), Hint: hint})
 	if err == nil && !created {
 		return r, ErrNotAllowed // one is already in progress
 	}
@@ -185,6 +191,43 @@ func Held(ctx context.Context, q *db.Queries, projectID int64) (string, error) {
 	}
 	return HeldBusy, nil
 }
+
+// Why a run failed, when it's known.
+const FailNotInRepo = "not_in_repo" // the agent didn't find the code that raises the error
+
+// NotInRepoTag is how the agent says so: the prompt asks it to end with
+// "CANNOT_FIX: NOT_IN_REPO: <what it looked for>".
+const NotInRepoTag = "NOT_IN_REPO"
+
+// ValidBranch says whether name is safe to hand the daemon as the branch to
+// fix from. It reaches git and gh on the founder's computer as an
+// argument, so it's held to a strict form: no leading '-' (an option), no
+// '..', '@{', spaces or control characters, and only ordinary characters.
+func ValidBranch(name string) bool {
+	if name == "" || len(name) > 200 || name[0] == '-' || name[0] == '/' || name[0] == '.' ||
+		strings.HasSuffix(name, "/") || strings.HasSuffix(name, ".") || strings.HasSuffix(name, ".lock") ||
+		strings.Contains(name, "..") || strings.Contains(name, "//") || strings.Contains(name, "/.") || strings.Contains(name, "@{") {
+		return false
+	}
+	for _, c := range name {
+		ok := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune("._/-+", c)
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// SetBranch sets the branch auto-fix works from ("" = the daemon's own).
+func SetBranch(ctx context.Context, pool *pgxpool.Pool, projectID int64, branch string) error {
+	if branch = strings.TrimSpace(branch); branch != "" && !ValidBranch(branch) {
+		return ErrBadBranch
+	}
+	return db.New(pool).SetProjectAutofixBranch(ctx, db.SetProjectAutofixBranchParams{ID: projectID, Branch: branch})
+}
+
+// ErrBadBranch is a branch name auto-fix won't use.
+var ErrBadBranch = errors.New("that isn't a branch name auto-fix can use: letters, digits and . _ / - + only")
 
 // Approve is the founder approving a waiting run (userID 0: from the
 // signed email link).
@@ -360,11 +403,22 @@ func MarkMerged(ctx context.Context, pool *pgxpool.Pool, projectID, runID, token
 }
 
 // MarkFailed ends a run the daemon couldn't finish.
-func MarkFailed(ctx context.Context, pool *pgxpool.Pool, projectID, runID int64, reason string) error {
+//
+// kind is why, when the daemon knows (FailNotInRepo), or "". Daemons older
+// than 0.3.0 don't send it but pass the agent's words on, so the tag the
+// prompt asks for is also recognized in the message.
+func MarkFailed(ctx context.Context, pool *pgxpool.Pool, projectID, runID int64, reason, kind string) error {
 	if reason = strings.TrimSpace(reason); reason == "" {
 		reason = "The agent couldn't fix it."
 	}
-	_, err := db.New(pool).SetAutofixFailed(ctx, db.SetAutofixFailedParams{ID: runID, ProjectID: projectID, Error: clip(reason, 1000)})
+	if kind != FailNotInRepo {
+		kind = ""
+	}
+	if i := strings.Index(reason, NotInRepoTag); i >= 0 {
+		kind = FailNotInRepo
+		reason = strings.TrimSpace(reason[:i] + strings.TrimLeft(reason[i+len(NotInRepoTag):], " :"))
+	}
+	_, err := db.New(pool).SetAutofixFailed(ctx, db.SetAutofixFailedParams{ID: runID, ProjectID: projectID, Error: clip(reason, 1000), FailReason: kind})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotAllowed
 	}
@@ -387,10 +441,15 @@ func Heartbeat(ctx context.Context, pool *pgxpool.Pool, projectID, runID int64, 
 
 func clip(s string, n int) string {
 	s = strings.TrimSpace(s)
-	if len(s) > n {
-		return s[:n]
+	if len(s) <= n {
+		return s
 	}
-	return s
+	// Cut on a character boundary: half a character isn't valid UTF-8,
+	// and Postgres refuses it.
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 func clipFiles(files []string) []string {

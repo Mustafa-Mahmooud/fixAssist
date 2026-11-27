@@ -15,7 +15,7 @@ const approveAutofixMerge = `-- name: ApproveAutofixMerge :one
 update autofix_runs
 set state = 'merge_approved', approved_user_id = $1, updated_at = now()
 where id = $2 and project_id = $3 and state = 'awaiting_merge_approval'
-returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at
+returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at, hint, fail_reason
 `
 
 type ApproveAutofixMergeParams struct {
@@ -47,25 +47,33 @@ func (q *Queries) ApproveAutofixMerge(ctx context.Context, arg ApproveAutofixMer
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Hint,
+		&i.FailReason,
 	)
 	return i, err
 }
 
 const approveAutofixRun = `-- name: ApproveAutofixRun :one
 update autofix_runs
-set state = 'approved', approved_by = 'user', approved_user_id = $1, approved_at = now(), updated_at = now()
-where id = $2 and project_id = $3 and state = 'pending_approval'
-returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at
+set state = 'approved', approved_by = 'user', approved_user_id = $1, approved_at = now(), hint = $2, updated_at = now()
+where id = $3 and project_id = $4 and state = 'pending_approval'
+returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at, hint, fail_reason
 `
 
 type ApproveAutofixRunParams struct {
 	UserID    pgtype.Int8
+	Hint      string
 	ID        int64
 	ProjectID int64
 }
 
 func (q *Queries) ApproveAutofixRun(ctx context.Context, arg ApproveAutofixRunParams) (AutofixRun, error) {
-	row := q.db.QueryRow(ctx, approveAutofixRun, arg.UserID, arg.ID, arg.ProjectID)
+	row := q.db.QueryRow(ctx, approveAutofixRun,
+		arg.UserID,
+		arg.Hint,
+		arg.ID,
+		arg.ProjectID,
+	)
 	var i AutofixRun
 	err := row.Scan(
 		&i.ID,
@@ -87,12 +95,14 @@ func (q *Queries) ApproveAutofixRun(ctx context.Context, arg ApproveAutofixRunPa
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Hint,
+		&i.FailReason,
 	)
 	return i, err
 }
 
 const approvedAutofixRunsWaiting = `-- name: ApprovedAutofixRunsWaiting :many
-select r.id, r.project_id, r.issue_id, r.suggestion_id, r.state, r.approved_by, r.approved_user_id, r.approved_at, r.auto_merge, r.token_id, r.claimed_at, r.lease_until, r.branch, r.pr_url, r.summary, r.files, r.error, r.created_at, r.updated_at from autofix_runs r
+select r.id, r.project_id, r.issue_id, r.suggestion_id, r.state, r.approved_by, r.approved_user_id, r.approved_at, r.auto_merge, r.token_id, r.claimed_at, r.lease_until, r.branch, r.pr_url, r.summary, r.files, r.error, r.created_at, r.updated_at, r.hint, r.fail_reason from autofix_runs r
 where r.state = 'approved'
   and exists (select 1 from projects p where p.id = r.project_id and p.autofix_enabled)
   and not exists (
@@ -132,6 +142,8 @@ func (q *Queries) ApprovedAutofixRunsWaiting(ctx context.Context, since pgtype.T
 			&i.Error,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Hint,
+			&i.FailReason,
 		); err != nil {
 			return nil, err
 		}
@@ -147,7 +159,7 @@ const claimAutofixRun = `-- name: ClaimAutofixRun :one
 update autofix_runs
 set state = 'claimed', token_id = $1, claimed_at = now(), lease_until = $2, updated_at = now()
 where id = $3 and state = 'approved'
-returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at
+returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at, hint, fail_reason
 `
 
 type ClaimAutofixRunParams struct {
@@ -179,6 +191,8 @@ func (q *Queries) ClaimAutofixRun(ctx context.Context, arg ClaimAutofixRunParams
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Hint,
+		&i.FailReason,
 	)
 	return i, err
 }
@@ -311,7 +325,7 @@ func (q *Queries) FailExpiredAutofixLeases(ctx context.Context, now pgtype.Times
 }
 
 const getAutofixRun = `-- name: GetAutofixRun :one
-select id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at from autofix_runs where id = $1 and project_id = $2
+select id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at, hint, fail_reason from autofix_runs where id = $1 and project_id = $2
 `
 
 type GetAutofixRunParams struct {
@@ -342,12 +356,14 @@ func (q *Queries) GetAutofixRun(ctx context.Context, arg GetAutofixRunParams) (A
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Hint,
+		&i.FailReason,
 	)
 	return i, err
 }
 
 const getAutofixRunByID = `-- name: GetAutofixRunByID :one
-select id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at from autofix_runs where id = $1
+select id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at, hint, fail_reason from autofix_runs where id = $1
 `
 
 func (q *Queries) GetAutofixRunByID(ctx context.Context, id int64) (AutofixRun, error) {
@@ -373,15 +389,17 @@ func (q *Queries) GetAutofixRunByID(ctx context.Context, id int64) (AutofixRun, 
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Hint,
+		&i.FailReason,
 	)
 	return i, err
 }
 
 const insertAutofixRun = `-- name: InsertAutofixRun :one
-insert into autofix_runs (project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at)
-values ($1, $2, $3, $4, $5, $6, $7)
+insert into autofix_runs (project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, hint)
+values ($1, $2, $3, $4, $5, $6, $7, $8)
 on conflict do nothing
-returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at
+returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at, hint, fail_reason
 `
 
 type InsertAutofixRunParams struct {
@@ -392,6 +410,7 @@ type InsertAutofixRunParams struct {
 	ApprovedBy     pgtype.Text
 	ApprovedUserID pgtype.Int8
 	ApprovedAt     pgtype.Timestamptz
+	Hint           string
 }
 
 // Nothing is inserted while another run for the issue is in progress.
@@ -404,6 +423,7 @@ func (q *Queries) InsertAutofixRun(ctx context.Context, arg InsertAutofixRunPara
 		arg.ApprovedBy,
 		arg.ApprovedUserID,
 		arg.ApprovedAt,
+		arg.Hint,
 	)
 	var i AutofixRun
 	err := row.Scan(
@@ -426,6 +446,8 @@ func (q *Queries) InsertAutofixRun(ctx context.Context, arg InsertAutofixRunPara
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Hint,
+		&i.FailReason,
 	)
 	return i, err
 }
@@ -450,7 +472,7 @@ func (q *Queries) InstantAlertedSince(ctx context.Context, arg InstantAlertedSin
 }
 
 const latestAutofixRun = `-- name: LatestAutofixRun :one
-select id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at from autofix_runs where issue_id = $1 order by created_at desc, id desc limit 1
+select id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at, hint, fail_reason from autofix_runs where issue_id = $1 order by created_at desc, id desc limit 1
 `
 
 func (q *Queries) LatestAutofixRun(ctx context.Context, issueID int64) (AutofixRun, error) {
@@ -476,12 +498,14 @@ func (q *Queries) LatestAutofixRun(ctx context.Context, issueID int64) (AutofixR
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Hint,
+		&i.FailReason,
 	)
 	return i, err
 }
 
 const listAutofixRuns = `-- name: ListAutofixRuns :many
-select r.id, r.project_id, r.issue_id, r.suggestion_id, r.state, r.approved_by, r.approved_user_id, r.approved_at, r.auto_merge, r.token_id, r.claimed_at, r.lease_until, r.branch, r.pr_url, r.summary, r.files, r.error, r.created_at, r.updated_at, i.title as issue_title from autofix_runs r join issues i on i.id = r.issue_id
+select r.id, r.project_id, r.issue_id, r.suggestion_id, r.state, r.approved_by, r.approved_user_id, r.approved_at, r.auto_merge, r.token_id, r.claimed_at, r.lease_until, r.branch, r.pr_url, r.summary, r.files, r.error, r.created_at, r.updated_at, r.hint, r.fail_reason, i.title as issue_title from autofix_runs r join issues i on i.id = r.issue_id
 where r.project_id = $1 order by r.created_at desc, r.id desc
 limit $3 offset $2
 `
@@ -512,6 +536,8 @@ type ListAutofixRunsRow struct {
 	Error          string
 	CreatedAt      pgtype.Timestamptz
 	UpdatedAt      pgtype.Timestamptz
+	Hint           string
+	FailReason     string
 	IssueTitle     string
 }
 
@@ -544,6 +570,8 @@ func (q *Queries) ListAutofixRuns(ctx context.Context, arg ListAutofixRunsParams
 			&i.Error,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Hint,
+			&i.FailReason,
 			&i.IssueTitle,
 		); err != nil {
 			return nil, err
@@ -569,7 +597,7 @@ func (q *Queries) MarkAutofixEmailed(ctx context.Context, id int64) (int64, erro
 }
 
 const nextApprovedAutofixRun = `-- name: NextApprovedAutofixRun :one
-select id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at from autofix_runs
+select id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at, hint, fail_reason from autofix_runs
 where project_id = $1 and state = 'approved'
 order by approved_at, id
 limit 1
@@ -599,6 +627,8 @@ func (q *Queries) NextApprovedAutofixRun(ctx context.Context, projectID int64) (
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Hint,
+		&i.FailReason,
 	)
 	return i, err
 }
@@ -610,7 +640,7 @@ where id = (
   where r.project_id = $1 and r.state = 'merge_approved'
   order by r.updated_at, r.id limit 1
   for update skip locked)
-returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at
+returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at, hint, fail_reason
 `
 
 // A merge approval for the daemon: it turns on auto-merge. Taken once.
@@ -637,12 +667,14 @@ func (q *Queries) NextMergeApprovedRun(ctx context.Context, projectID int64) (Au
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Hint,
+		&i.FailReason,
 	)
 	return i, err
 }
 
 const openAutofixPRs = `-- name: OpenAutofixPRs :many
-select id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at from autofix_runs
+select id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at, hint, fail_reason from autofix_runs
 where project_id = $1 and state in ('pr_opened', 'awaiting_merge_approval', 'merge_approved') and pr_url <> ''
 order by id
 `
@@ -677,6 +709,8 @@ func (q *Queries) OpenAutofixPRs(ctx context.Context, projectID int64) ([]Autofi
 			&i.Error,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Hint,
+			&i.FailReason,
 		); err != nil {
 			return nil, err
 		}
@@ -690,19 +724,20 @@ func (q *Queries) OpenAutofixPRs(ctx context.Context, projectID int64) ([]Autofi
 
 const projectAutofix = `-- name: ProjectAutofix :one
 
-select autofix_enabled, autofix_rule from projects where id = $1
+select autofix_enabled, autofix_rule, autofix_branch from projects where id = $1
 `
 
 type ProjectAutofixRow struct {
 	AutofixEnabled bool
 	AutofixRule    string
+	AutofixBranch  string
 }
 
 // Auto-fix (internal/autofix) ----------------------------------------------
 func (q *Queries) ProjectAutofix(ctx context.Context, id int64) (ProjectAutofixRow, error) {
 	row := q.db.QueryRow(ctx, projectAutofix, id)
 	var i ProjectAutofixRow
-	err := row.Scan(&i.AutofixEnabled, &i.AutofixRule)
+	err := row.Scan(&i.AutofixEnabled, &i.AutofixRule, &i.AutofixBranch)
 	return i, err
 }
 
@@ -750,7 +785,7 @@ func (q *Queries) ProjectDaemons(ctx context.Context, projectID int64) ([]Projec
 const rejectAutofixRun = `-- name: RejectAutofixRun :one
 update autofix_runs set state = 'rejected', updated_at = now()
 where id = $1 and project_id = $2 and state in ('pending_approval', 'approved')
-returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at
+returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at, hint, fail_reason
 `
 
 type RejectAutofixRunParams struct {
@@ -781,25 +816,33 @@ func (q *Queries) RejectAutofixRun(ctx context.Context, arg RejectAutofixRunPara
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Hint,
+		&i.FailReason,
 	)
 	return i, err
 }
 
 const setAutofixFailed = `-- name: SetAutofixFailed :one
-update autofix_runs set state = 'failed', error = $1, lease_until = null, updated_at = now()
-where id = $2 and project_id = $3
+update autofix_runs set state = 'failed', error = $1, fail_reason = $2, lease_until = null, updated_at = now()
+where id = $3 and project_id = $4
   and state in ('claimed', 'pr_opened', 'awaiting_merge_approval', 'merge_approved')
-returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at
+returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at, hint, fail_reason
 `
 
 type SetAutofixFailedParams struct {
-	Error     string
-	ID        int64
-	ProjectID int64
+	Error      string
+	FailReason string
+	ID         int64
+	ProjectID  int64
 }
 
 func (q *Queries) SetAutofixFailed(ctx context.Context, arg SetAutofixFailedParams) (AutofixRun, error) {
-	row := q.db.QueryRow(ctx, setAutofixFailed, arg.Error, arg.ID, arg.ProjectID)
+	row := q.db.QueryRow(ctx, setAutofixFailed,
+		arg.Error,
+		arg.FailReason,
+		arg.ID,
+		arg.ProjectID,
+	)
 	var i AutofixRun
 	err := row.Scan(
 		&i.ID,
@@ -821,6 +864,8 @@ func (q *Queries) SetAutofixFailed(ctx context.Context, arg SetAutofixFailedPara
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Hint,
+		&i.FailReason,
 	)
 	return i, err
 }
@@ -828,7 +873,7 @@ func (q *Queries) SetAutofixFailed(ctx context.Context, arg SetAutofixFailedPara
 const setAutofixMerged = `-- name: SetAutofixMerged :one
 update autofix_runs set state = 'merged', lease_until = null, updated_at = now()
 where id = $1 and project_id = $2 and state in ('pr_opened', 'awaiting_merge_approval', 'merge_approved')
-returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at
+returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at, hint, fail_reason
 `
 
 type SetAutofixMergedParams struct {
@@ -859,6 +904,8 @@ func (q *Queries) SetAutofixMerged(ctx context.Context, arg SetAutofixMergedPara
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Hint,
+		&i.FailReason,
 	)
 	return i, err
 }
@@ -884,7 +931,7 @@ update autofix_runs
 set state = $1, branch = $2, pr_url = $3, auto_merge = $4,
     summary = $5, files = $6, lease_until = null, error = '', updated_at = now()
 where id = $7 and project_id = $8 and state = 'claimed'
-returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at
+returning id, project_id, issue_id, suggestion_id, state, approved_by, approved_user_id, approved_at, auto_merge, token_id, claimed_at, lease_until, branch, pr_url, summary, files, error, created_at, updated_at, hint, fail_reason
 `
 
 type SetAutofixPRParams struct {
@@ -930,6 +977,8 @@ func (q *Queries) SetAutofixPR(ctx context.Context, arg SetAutofixPRParams) (Aut
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Hint,
+		&i.FailReason,
 	)
 	return i, err
 }
@@ -946,6 +995,20 @@ type SetProjectAutofixParams struct {
 
 func (q *Queries) SetProjectAutofix(ctx context.Context, arg SetProjectAutofixParams) error {
 	_, err := q.db.Exec(ctx, setProjectAutofix, arg.Enabled, arg.Rule, arg.ID)
+	return err
+}
+
+const setProjectAutofixBranch = `-- name: SetProjectAutofixBranch :exec
+update projects set autofix_branch = $1 where id = $2
+`
+
+type SetProjectAutofixBranchParams struct {
+	Branch string
+	ID     int64
+}
+
+func (q *Queries) SetProjectAutofixBranch(ctx context.Context, arg SetProjectAutofixBranchParams) error {
+	_, err := q.db.Exec(ctx, setProjectAutofixBranch, arg.Branch, arg.ID)
 	return err
 }
 
