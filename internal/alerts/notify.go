@@ -114,7 +114,29 @@ func (n *Notifier) CheckInstant(ctx context.Context, issueID int64) (InstantResu
 	if s.Why != "" {
 		fmt.Fprintf(&b, "\nWhy: %s\n", s.Why)
 	}
-	fmt.Fprintf(&b, "\nPaste this into %s:\n\n----------\n%s\n----------\n\nDetails: %s\n", agentName(is.TargetAgent), n.Prompt(is.TargetAgent, s), link)
+	prompt := n.Prompt(is.TargetAgent, s)
+	fmt.Fprintf(&b, "\nPaste this into %s:\n\n----------\n%s\n----------\n\nDetails: %s\n", agentName(is.TargetAgent), prompt, link)
+	e := Email{
+		Preheader: s.WhatBroke,
+		Label:     "New issue",
+		Tone:      "bad",
+		Heading:   s.Title,
+		Paras:     []string{s.WhatBroke, s.WhoIsAffected},
+		CodeLabel: "Paste this into " + agentName(is.TargetAgent) + ":",
+		Code:      prompt,
+		Buttons:   []Button{{"Open the issue", link}},
+	}
+	if regressed {
+		e.Label = "Came back"
+	}
+	if s.Why != "" {
+		e.Paras = append(e.Paras, "Why: "+s.Why)
+	}
+	if n.FeedbackLink != nil {
+		e.Buttons = append(e.Buttons, Button{"It worked", n.FeedbackLink(s.ID, "worked")}, Button{"Didn't work", n.FeedbackLink(s.ID, "failed")})
+		e.Note = "Tried the fix? Tell us with the buttons above so we can learn what works."
+	}
+	html := RenderHTML(e)
 	// Check the daily cap and store the alert atomically per project:
 	// concurrent alert checks would otherwise both see "2 sent today" and
 	// both send. Email goes out after commit.
@@ -144,7 +166,7 @@ func (n *Notifier) CheckInstant(ctx context.Context, issueID int64) (InstantResu
 	case !created:
 		return SkipAlreadyToday, nil
 	}
-	return SentInstant, n.deliver(ctx, q, id, is.ProjectID, "instant", subject, b.String())
+	return SentInstant, n.deliver(ctx, q, id, is.ProjectID, "instant", subject, b.String(), html)
 }
 
 // instantCapLock namespaces the per-project advisory lock for the daily cap.
@@ -152,12 +174,12 @@ const instantCapLock int32 = 726_2002
 
 // record stores the alert (idempotent per issue/day or project/day) and
 // emails it. created is false when this alert already exists for the day.
-func (n *Notifier) record(ctx context.Context, q *db.Queries, projectID int64, issueID pgtype.Int8, kind string, day time.Time, subject, body string) (created bool, err error) {
+func (n *Notifier) record(ctx context.Context, q *db.Queries, projectID int64, issueID pgtype.Int8, kind string, day time.Time, subject, body, html string) (created bool, err error) {
 	id, created, err := insertAlert(ctx, q, projectID, issueID, kind, day, subject, body)
 	if err != nil || !created {
 		return created, err
 	}
-	return true, n.deliver(ctx, q, id, projectID, kind, subject, body)
+	return true, n.deliver(ctx, q, id, projectID, kind, subject, body, html)
 }
 
 // insertAlert stores the alert; created is false if it already exists for
@@ -173,7 +195,7 @@ func insertAlert(ctx context.Context, q *db.Queries, projectID int64, issueID pg
 }
 
 // deliver emails a stored alert to the project's members (unless email is off).
-func (n *Notifier) deliver(ctx context.Context, q *db.Queries, id, projectID int64, kind, subject, body string) error {
+func (n *Notifier) deliver(ctx context.Context, q *db.Queries, id, projectID int64, kind, subject, body, html string) error {
 	if n.EmailOff {
 		n.Log.Info("alert stored (email off)", "kind", kind, "project_id", projectID, "subject", subject)
 		return nil
@@ -184,7 +206,7 @@ func (n *Notifier) deliver(ctx context.Context, q *db.Queries, id, projectID int
 	}
 	var sent []string
 	for _, addr := range to {
-		if err := n.Sender.Send(ctx, Message{To: addr, Subject: subject, Text: body}); err != nil {
+		if err := n.Sender.Send(ctx, Message{To: addr, Subject: subject, Text: body, HTML: html}); err != nil {
 			n.Log.Warn("alert email failed", "to", addr, "err", err)
 			continue
 		}
@@ -233,8 +255,20 @@ func (n *Notifier) RunDigests(ctx context.Context) (int, error) {
 		if err != nil {
 			return sentCount, err
 		}
+		base := strings.TrimRight(n.BaseURL, "/")
 		var b strings.Builder
 		fmt.Fprintf(&b, "Your app %s in the last 24 hours:\n\n", p.Name)
+		e := Email{
+			Label:   "Daily summary",
+			Heading: p.Name + " in the last 24 hours",
+			Stats: []Stat{
+				{"New issues", strconv.Itoa(len(newIssues))},
+				{"Fixed", strconv.FormatInt(fixed, 10)},
+				{"Still open", strconv.FormatInt(open, 10)},
+				{"Page views", strconv.FormatInt(views, 10)},
+			},
+			Buttons: []Button{{"Open the dashboard", fmt.Sprintf("%s/projects/%d", base, p.ID)}},
+		}
 		if len(newIssues) > 0 {
 			fmt.Fprintf(&b, "New issues (%d):\n", len(newIssues))
 			for _, i := range newIssues {
@@ -242,18 +276,25 @@ func (n *Notifier) RunDigests(ctx context.Context) (int, error) {
 				if i.Severity != "" {
 					sev = " [" + i.Severity + "]"
 				}
-				fmt.Fprintf(&b, "- %s%s: %s, %s\n  %s/projects/%d/issues/%d\n", i.Title, sev,
-					countWord(i.UserCount, "person", "people"), countWord(i.EventCount, "time", "times"),
-					strings.TrimRight(n.BaseURL, "/"), p.ID, i.ID)
+				meta := countWord(i.UserCount, "person", "people") + " affected, " + countWord(i.EventCount, "time", "times")
+				url := fmt.Sprintf("%s/projects/%d/issues/%d", base, p.ID, i.ID)
+				fmt.Fprintf(&b, "- %s%s: %s, %s\n  %s\n", i.Title, sev,
+					countWord(i.UserCount, "person", "people"), countWord(i.EventCount, "time", "times"), url)
+				e.Items = append(e.Items, Item{Title: i.Title, Meta: meta, URL: url, Badge: i.Severity})
 			}
 			b.WriteString("\n")
+			e.Preheader = countWord(int64(len(newIssues)), "new issue", "new issues") + ", " + strconv.FormatInt(open, 10) + " still open."
+		} else {
+			e.Preheader = countWord(fixed, "issue", "issues") + " fixed since yesterday. Nice work."
+			e.Paras = []string{"No new issues since yesterday."}
+			e.Tone = "ok"
 		}
 		if fixed > 0 {
 			fmt.Fprintf(&b, "Fixed since yesterday: %d\n", fixed)
 		}
 		fmt.Fprintf(&b, "Still open: %d\nPage views: %d\n", open, views)
 		subject := fmt.Sprintf("[%s] Daily summary: %s", p.Name, countWord(int64(len(newIssues)), "new issue", "new issues"))
-		created, err := n.record(ctx, q, p.ID, pgtype.Int8{}, "digest", local, subject, b.String())
+		created, err := n.record(ctx, q, p.ID, pgtype.Int8{}, "digest", local, subject, b.String(), RenderHTML(e))
 		if err != nil {
 			return sentCount, err
 		}
@@ -282,21 +323,35 @@ func (n *Notifier) CheckQuotas(ctx context.Context) (int, error) {
 		}
 		pct := r.Events * 100 / r.QuotaMonthly
 		var kind, subject, body string
+		reset := month.AddDate(0, 1, 0).Format("2 January")
+		e := Email{
+			Stats: []Stat{
+				{"Events used", strconv.FormatInt(r.Events, 10)},
+				{"Monthly limit", strconv.FormatInt(r.QuotaMonthly, 10)},
+				{"Resets", reset},
+			},
+			Buttons: []Button{{"See the issues", fmt.Sprintf("%s/projects/%d", strings.TrimRight(n.BaseURL, "/"), r.ID)}},
+		}
 		switch {
 		case pct >= 100:
 			kind = "quota100"
 			subject = fmt.Sprintf("[%s] Monthly event limit reached", r.Name)
 			body = fmt.Sprintf("Your app %s has sent %d of its %d monthly events. New errors aren't recorded until %s.\n\nUsually this means one error is firing in a loop; the issue list shows which one.\n",
-				r.Name, r.Events, r.QuotaMonthly, month.AddDate(0, 1, 0).Format("2 January"))
+				r.Name, r.Events, r.QuotaMonthly, reset)
+			e.Label, e.Tone, e.Heading = "Limit reached", "bad", r.Name+" reached its monthly event limit"
+			e.Paras = []string{"New errors aren't recorded until " + reset + ".", "Usually this means one error is firing in a loop; the issue list shows which one."}
 		case pct >= 80:
 			kind = "quota80"
 			subject = fmt.Sprintf("[%s] 80%% of this month's events used", r.Name)
 			body = fmt.Sprintf("Your app %s has sent %d of its %d monthly events (%d%%). At 100%% new errors stop being recorded until %s.\n",
-				r.Name, r.Events, r.QuotaMonthly, pct, month.AddDate(0, 1, 0).Format("2 January"))
+				r.Name, r.Events, r.QuotaMonthly, pct, reset)
+			e.Label, e.Tone, e.Heading = "Usage warning", "warn", fmt.Sprintf("%s has used %d%% of this month's events", r.Name, pct)
+			e.Paras = []string{"At 100% new errors stop being recorded until " + reset + "."}
 		default:
 			continue
 		}
-		created, err := n.record(ctx, q, r.ID, pgtype.Int8{}, kind, month, subject, body)
+		e.Preheader = e.Paras[0]
+		created, err := n.record(ctx, q, r.ID, pgtype.Int8{}, kind, month, subject, body, RenderHTML(e))
 		if err != nil {
 			return sent, err
 		}
@@ -340,13 +395,23 @@ func (n *Notifier) RunGrowthReports(ctx context.Context) (int, error) {
 			}
 			continue
 		}
+		insights := fmt.Sprintf("%s/projects/%d/insights", strings.TrimRight(n.BaseURL, "/"), p.ID)
 		var b strings.Builder
 		fmt.Fprintf(&b, "This week's ideas to get more sign-ups for %s:\n\n", p.Name)
+		e := Email{
+			Label:     "Weekly ideas",
+			Tone:      "ok",
+			Heading:   "Ideas to get more sign-ups for " + p.Name,
+			Paras:     []string{"Each idea comes with a prompt you can paste into your AI agent."},
+			Buttons:   []Button{{"See the prompts", insights}},
+			Preheader: list[0].Title,
+		}
 		for i, in := range list {
 			fmt.Fprintf(&b, "%d. %s\n   %s\n\n", i+1, in.Title, in.Evidence)
+			e.Items = append(e.Items, Item{Title: fmt.Sprintf("%d. %s", i+1, in.Title), Meta: in.Evidence, URL: insights})
 		}
-		fmt.Fprintf(&b, "Each comes with a prompt for your AI agent: %s/projects/%d/insights\n", strings.TrimRight(n.BaseURL, "/"), p.ID)
-		created, err := n.record(ctx, q, p.ID, pgtype.Int8{}, "growth", week, fmt.Sprintf("[%s] %s to get more sign-ups this week", p.Name, countWord(int64(len(list)), "idea", "ideas")), b.String())
+		fmt.Fprintf(&b, "Each comes with a prompt for your AI agent: %s\n", insights)
+		created, err := n.record(ctx, q, p.ID, pgtype.Int8{}, "growth", week, fmt.Sprintf("[%s] %s to get more sign-ups this week", p.Name, countWord(int64(len(list)), "idea", "ideas")), b.String(), RenderHTML(e))
 		if err != nil {
 			return sent, err
 		}

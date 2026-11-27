@@ -122,8 +122,15 @@ func (s *Service) RequestLink(ctx context.Context, rawEmail string) error {
 		Subject: "Your Fix Assistant sign-in link",
 		Text: fmt.Sprintf("Click to sign in to Fix Assistant:\n\n%s\n\nThe link works once and expires in %d minutes. If you didn't ask for it, ignore this email.\n",
 			link, int(TokenTTL.Minutes())),
-		HTML: fmt.Sprintf(`<p>Click to sign in to Fix Assistant:</p><p><a href="%s">Sign in</a></p><p>The link works once and expires in %d minutes. If you didn't ask for it, ignore this email.</p>`,
-			link, int(TokenTTL.Minutes())),
+		HTML: alerts.RenderHTML(alerts.Email{
+			Preheader: fmt.Sprintf("Your sign-in link. It works once and expires in %d minutes.", int(TokenTTL.Minutes())),
+			Heading:   "Sign in to Fix Assistant",
+			Paras:     []string{"Click the button below to sign in. No password needed."},
+			Buttons:   []alerts.Button{{Label: "Sign in", URL: link}},
+			Note: fmt.Sprintf("The link works once and expires in %d minutes. If you didn't ask for it, you can safely ignore this email.",
+				int(TokenTTL.Minutes())),
+			Footer: "Sent to " + email + " because someone asked to sign in with this address.",
+		}),
 	})
 }
 

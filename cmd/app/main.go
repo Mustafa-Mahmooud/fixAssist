@@ -416,6 +416,11 @@ func admin(ctx context.Context, log *slog.Logger, args []string) error {
 		err := alerts.FromEnv(log).Send(ctx, alerts.Message{
 			To: *to, Subject: "Fix Assistant: email is working",
 			Text: "This is a test from Fix Assistant. Sign-in links, alerts and digests will be sent the same way.",
+			HTML: alerts.RenderHTML(alerts.Email{
+				Label: "Test", Tone: "ok", Heading: "Email is working",
+				Paras:  []string{"This is a test from Fix Assistant. Sign-in links, alerts and digests will be sent the same way."},
+				Footer: "Sent with the app test-email command.",
+			}),
 		})
 		if err != nil {
 			return err

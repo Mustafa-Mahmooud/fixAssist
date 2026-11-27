@@ -87,6 +87,11 @@ func (d *Dev) Send(_ context.Context, m Message) error {
 	if err := os.WriteFile(filepath.Join(d.Dir, name), []byte(b.String()), 0o600); err != nil {
 		return err
 	}
+	if m.HTML != "" { // open in a browser to preview the design
+		if err := os.WriteFile(filepath.Join(d.Dir, strings.TrimSuffix(name, ".eml")+".html"), []byte(m.HTML), 0o600); err != nil {
+			return err
+		}
+	}
 	d.Log.Info("dev email (not sent)", "to", m.To, "subject", m.Subject, "file", name, "links", reLink.FindAllString(m.Text, -1))
 	return nil
 }
