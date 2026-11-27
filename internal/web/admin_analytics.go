@@ -117,8 +117,10 @@ func (a *App) adminAccounts(w http.ResponseWriter, r *http.Request) {
 			active++
 		}
 	}
+	// The stats count every account; the cards below come a page at a time.
+	pg := pageOf(r, "page", len(list), AccountsPerPage, "", true)
 	a.render(w, 200, "admin_accounts", page{Title: "Accounts", Session: sessionFrom(r), Data: map[string]any{
-		"Accounts": list, "Apps": apps, "Active": active,
+		"Accounts": list[pg.Offset():pg.Last()], "Total": len(list), "Apps": apps, "Active": active, "Pager": pg,
 	}})
 }
 

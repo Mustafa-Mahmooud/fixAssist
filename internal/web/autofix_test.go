@@ -187,4 +187,19 @@ func TestAutofixDashboard(t *testing.T) {
 	if b := body(t, resp); strings.Contains(b, "Your daemon is connected, but") {
 		t.Error("ten fixes today hold the next one")
 	}
+
+	// Setup lists the runs 10 at a time, newest first.
+	var total int
+	_ = f.pool.QueryRow(ctx, `select count(*) from autofix_runs where project_id = $1`, p.ID).Scan(&total)
+	if total <= web.RunsPerPage {
+		t.Fatalf("only %d runs: the pager isn't exercised", total)
+	}
+	resp, _ = founder.Get(base + "/setup")
+	if b := body(t, resp); !strings.Contains(b, fmt.Sprintf("1–%d of %d", web.RunsPerPage, total)) || !strings.Contains(b, `href="?runs=2#autofix"`) {
+		t.Errorf("setup page 1 has no pager")
+	}
+	resp, _ = founder.Get(base + "/setup?runs=2")
+	if b := body(t, resp); !strings.Contains(b, fmt.Sprintf("%d–%d of %d", web.RunsPerPage+1, min(total, 2*web.RunsPerPage), total)) || !strings.Contains(b, `href="?#autofix"`) {
+		t.Errorf("setup page 2 is wrong")
+	}
 }

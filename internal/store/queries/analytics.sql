@@ -84,7 +84,11 @@ order by impact_score desc limit 200;
 select id, week, detector, title, evidence, hypothesis, fix_prompt, how_to_check, metric,
        baseline::float8 as baseline, (after_value is not null)::boolean as has_after,
        coalesce(after_value, 0)::float8 as after_value, outcome, outcome_source, created_at
-from growth_insights where project_id = $1 order by week desc, id limit 30;
+from growth_insights where project_id = @project_id order by week desc, id
+limit @lim offset @off;
+
+-- name: CountInsights :one
+select count(*) from growth_insights where project_id = $1;
 
 -- name: SetInsightOutcome :execrows
 update growth_insights set outcome = $3, outcome_source = 'explicit' where id = $1 and project_id = $2;

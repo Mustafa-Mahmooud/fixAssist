@@ -32,7 +32,14 @@ func (a *App) insightsPage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	list, err := db.New(a.Pool).ListInsights(r.Context(), p.ID)
+	q := db.New(a.Pool)
+	total, err := q.CountInsights(r.Context(), p.ID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	pg := pageOf(r, "page", int(total), InsightsPerPage, "", true)
+	list, err := q.ListInsights(r.Context(), db.ListInsightsParams{ProjectID: p.ID, Lim: pg.Limit(), Off: pg.Off()})
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -53,7 +60,7 @@ func (a *App) insightsPage(w http.ResponseWriter, r *http.Request) {
 		}
 		views = append(views, v)
 	}
-	a.render(w, 200, "insights", page{Title: "Insights", Session: sessionFrom(r), Data: map[string]any{"Project": p, "Insights": views}})
+	a.render(w, 200, "insights", page{Title: "Insights", Session: sessionFrom(r), Data: map[string]any{"Project": p, "Insights": views, "Pager": pg}})
 }
 
 func metricName(m analytics.Metric) string {

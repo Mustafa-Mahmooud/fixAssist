@@ -232,7 +232,8 @@ type DaemonView struct {
 }
 
 // autofixSetup is the Setup page's auto-fix section.
-func (a *App) autofixSetup(ctx context.Context, projectID int64) (map[string]any, error) {
+func (a *App) autofixSetup(r *http.Request, projectID int64) (map[string]any, error) {
+	ctx := r.Context()
 	q := db.New(a.Pool)
 	set, err := q.ProjectAutofix(ctx, projectID)
 	if err != nil {
@@ -249,12 +250,17 @@ func (a *App) autofixSetup(ctx context.Context, projectID int64) (map[string]any
 		online = online || on
 		daemons = append(daemons, DaemonView{ProjectDaemonsRow: d, Online: on})
 	}
-	runs, err := q.ListAutofixRuns(ctx, projectID)
+	total, err := q.CountAutofixRuns(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	pg := pageOf(r, "runs", int(total), RunsPerPage, "autofix", true)
+	runs, err := q.ListAutofixRuns(ctx, db.ListAutofixRunsParams{ProjectID: projectID, Lim: pg.Limit(), Off: pg.Off()})
 	if err != nil {
 		return nil, err
 	}
 	return map[string]any{"Enabled": set.AutofixEnabled, "Rule": set.AutofixRule, "Daemons": daemons, "Online": online,
-		"Runs": runs, "Downloads": DownloadFiles}, nil
+		"Runs": runs, "RunsPager": pg, "Downloads": DownloadFiles}, nil
 }
 
 // autofixIssue is the issue page's auto-fix block.

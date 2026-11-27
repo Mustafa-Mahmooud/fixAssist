@@ -3,7 +3,7 @@
 {{template "admin_nav" .}}
 <p class="muted">Every account, who's in it and how its apps are doing. Open an account for the full picture, or an app to work on it with the owner's full access.</p>
 <div class="stats">
-  <div class="stat"><span class="muted small">Accounts</span><b>{{len .Data.Accounts}}</b></div>
+  <div class="stat"><span class="muted small">Accounts</span><b>{{.Data.Total}}</b></div>
   <div class="stat"><span class="muted small">Apps</span><b>{{.Data.Apps}}</b></div>
   <div class="stat"><span class="muted small"><span class="hint" title="Accounts with at least one visitor on any of their apps in the last 7 days.">Active this week</span></span><b>{{.Data.Active}}</b></div>
 </div>
@@ -25,4 +25,5 @@
   {{template "admin_app_table" .Projects}}
 </section>
 {{else}}<p class="muted">No accounts yet.</p>{{end}}
+{{template "pager" .Data.Pager}}
 {{end}}

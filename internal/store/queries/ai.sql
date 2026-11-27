@@ -73,7 +73,11 @@ update alert_log set emailed_to = $2 where id = $1;
 
 -- name: ListAlerts :many
 select a.id, a.kind, a.subject, a.sent_at, a.issue_id, a.emailed_to
-from alert_log a where a.project_id = $1 order by a.sent_at desc limit 50;
+from alert_log a where a.project_id = @project_id order by a.sent_at desc
+limit @lim offset @off;
+
+-- name: CountAlerts :one
+select count(*) from alert_log where project_id = $1;
 
 -- name: ProjectsForDigest :many
 select id, name, timezone from projects order by id;

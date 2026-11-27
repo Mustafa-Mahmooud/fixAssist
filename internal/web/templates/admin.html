@@ -16,7 +16,7 @@
   </table>
 </div>
 
-<h2>Quarantined fix patterns</h2>
+<h2 id="quarantined">Quarantined fix patterns</h2>
 <p class="muted small">A pattern is quarantined after 5 or more answers with under 30% worked; new issues with it get a diagnose-in-your-code prompt instead. Rewrite the catalog entry, then reset.</p>
 <div class="card table-wrap">
   <table>
@@ -29,8 +29,9 @@
     </tbody>
   </table>
 </div>
+{{template "pager" .Data.QuarantinedPager}}
 
-<h2>Ingest</h2>
+<h2 id="apps">Ingest</h2>
 <p class="muted small">Responses since this server started:
   {{range .Data.Codes}}<code>{{.Code}}</code> {{.Count}} &nbsp;{{else}}none yet{{end}}
   (429 = rate or monthly quota limited)</p>
@@ -44,6 +45,7 @@
     </tbody>
   </table>
 </div>
+{{template "pager" .Data.AppsPager}}
 
 <h2>Queues</h2>
 <div class="grid">

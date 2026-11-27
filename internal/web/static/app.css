@@ -213,6 +213,8 @@ button:hover, .button:hover { background: var(--accent-hover); border-color: var
 button:active, .button:active { transform: translateY(1px); }
 button.secondary, .button.secondary { color: var(--text); background: var(--surface); border-color: var(--border-strong); }
 button.secondary:hover, .button.secondary:hover { background: var(--neutral-soft); border-color: var(--border-strong); }
+.button[aria-disabled="true"] { opacity: .45; pointer-events: none; }
+.pager { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-top: .75rem; }
 button.danger { color: var(--bad); background: var(--surface); border-color: color-mix(in srgb, var(--bad) 40%, var(--border)); }
 button.danger:hover { background: var(--bad-soft); }
 button.big, .button.big { padding: .75rem 1.25rem; font-size: 1.02rem; }

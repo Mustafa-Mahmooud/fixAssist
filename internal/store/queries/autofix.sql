@@ -43,7 +43,11 @@ select * from autofix_runs where issue_id = $1 order by created_at desc, id desc
 
 -- name: ListAutofixRuns :many
 select r.*, i.title as issue_title from autofix_runs r join issues i on i.id = r.issue_id
-where r.project_id = $1 order by r.created_at desc, r.id desc limit 20;
+where r.project_id = @project_id order by r.created_at desc, r.id desc
+limit @lim offset @off;
+
+-- name: CountAutofixRuns :one
+select count(*) from autofix_runs where project_id = $1;
 
 -- name: ApproveAutofixRun :one
 update autofix_runs

@@ -212,6 +212,17 @@ func (q *Queries) CountAutofixAlertsSince(ctx context.Context, arg CountAutofixA
 	return count, err
 }
 
+const countAutofixRuns = `-- name: CountAutofixRuns :one
+select count(*) from autofix_runs where project_id = $1
+`
+
+func (q *Queries) CountAutofixRuns(ctx context.Context, projectID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countAutofixRuns, projectID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const daemonOnline = `-- name: DaemonOnline :one
 select exists (
   select 1 from agent_daemons d join agent_tokens t on t.id = d.token_id
@@ -471,8 +482,15 @@ func (q *Queries) LatestAutofixRun(ctx context.Context, issueID int64) (AutofixR
 
 const listAutofixRuns = `-- name: ListAutofixRuns :many
 select r.id, r.project_id, r.issue_id, r.suggestion_id, r.state, r.approved_by, r.approved_user_id, r.approved_at, r.auto_merge, r.token_id, r.claimed_at, r.lease_until, r.branch, r.pr_url, r.summary, r.files, r.error, r.created_at, r.updated_at, i.title as issue_title from autofix_runs r join issues i on i.id = r.issue_id
-where r.project_id = $1 order by r.created_at desc, r.id desc limit 20
+where r.project_id = $1 order by r.created_at desc, r.id desc
+limit $2 offset $3
 `
+
+type ListAutofixRunsParams struct {
+	ProjectID int64
+	Lim       int32
+	Off       int32
+}
 
 type ListAutofixRunsRow struct {
 	ID             int64
@@ -497,8 +515,8 @@ type ListAutofixRunsRow struct {
 	IssueTitle     string
 }
 
-func (q *Queries) ListAutofixRuns(ctx context.Context, projectID int64) ([]ListAutofixRunsRow, error) {
-	rows, err := q.db.Query(ctx, listAutofixRuns, projectID)
+func (q *Queries) ListAutofixRuns(ctx context.Context, arg ListAutofixRunsParams) ([]ListAutofixRunsRow, error) {
+	rows, err := q.db.Query(ctx, listAutofixRuns, arg.ProjectID, arg.Lim, arg.Off)
 	if err != nil {
 		return nil, err
 	}

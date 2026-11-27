@@ -40,7 +40,13 @@ type outcomeRow struct {
 
 func (a *App) adminPage(w http.ResponseWriter, r *http.Request) {
 	q := db.New(a.Pool)
-	projects, err := q.AdminIngestByProject(r.Context())
+	nApps, err := q.CountProjects(r.Context())
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	appsPg := pageOf(r, "apps", int(nApps), AdminAppsPerPage, "apps", false)
+	projects, err := q.AdminIngestByProject(r.Context(), db.AdminIngestByProjectParams{Lim: appsPg.Limit(), Off: appsPg.Off()})
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -82,14 +88,20 @@ func (a *App) adminPage(w http.ResponseWriter, r *http.Request) {
 		}
 		sort.Slice(codes, func(i, j int) bool { return codes[i].Code < codes[j].Code })
 	}
-	quarantined, err := q.AdminQuarantined(r.Context())
+	nQuar, err := q.CountQuarantined(r.Context())
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	quarPg := pageOf(r, "quarantined", int(nQuar), QuarantinedPerPage, "quarantined", true)
+	quarantined, err := q.AdminQuarantined(r.Context(), db.AdminQuarantinedParams{Lim: quarPg.Limit(), Off: quarPg.Off()})
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
 	a.render(w, 200, "admin", page{Title: "Admin", Session: sessionFrom(r), Data: map[string]any{
 		"Projects": projects, "Queues": queues, "Lags": lags, "Outcomes": outcomes, "Overall": overall, "Codes": codes,
-		"Quarantined": quarantined,
+		"Quarantined": quarantined, "AppsPager": appsPg, "QuarantinedPager": quarPg,
 	}})
 }
 

@@ -9,7 +9,10 @@ select p.id, p.name, o.name as org_name,
   (select count(*) from fix_feedback f join issues i on i.id = f.issue_id where i.project_id = p.id and f.outcome = 'failed')::bigint as failed
 from projects p join orgs o on o.id = p.org_id
 order by events_24h desc, p.id
-limit 200;
+limit @lim offset @off;
+
+-- name: CountProjects :one
+select count(*) from projects;
 
 -- name: AdminQueues :many
 select queue, state::text as state, count(*)::bigint as jobs
@@ -45,7 +48,11 @@ select row_to_json(i)::text from issues i where i.id = $1;
 
 -- name: AdminQuarantined :many
 select id, signature, catalog_key, worked, failed, confidence::float8 as confidence, quarantined_at
-from knowledge_entries where quarantined_at is not null order by quarantined_at desc limit 50;
+from knowledge_entries where quarantined_at is not null order by quarantined_at desc
+limit @lim offset @off;
+
+-- name: CountQuarantined :one
+select count(*) from knowledge_entries where quarantined_at is not null;
 
 -- name: AdminUnquarantine :execrows
 update knowledge_entries set quarantined_at = null, worked = 0, failed = 0, confidence = 0.5 where id = $1;

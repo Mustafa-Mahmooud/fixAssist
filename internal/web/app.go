@@ -417,7 +417,7 @@ func (a *App) renderSetup(w http.ResponseWriter, r *http.Request, p db.GetOrgPro
 		shown = "<your agent token>"
 	}
 	mcpURL := strings.TrimRight(a.BaseURL, "/") + "/mcp"
-	af, err := a.autofixSetup(r.Context(), p.ID)
+	af, err := a.autofixSetup(r, p.ID)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -650,12 +650,19 @@ func (a *App) alertsPage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	list, err := db.New(a.Pool).ListAlerts(r.Context(), p.ID)
+	q := db.New(a.Pool)
+	total, err := q.CountAlerts(r.Context(), p.ID)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
-	a.render(w, 200, "alerts", page{Title: "Alerts", Session: sessionFrom(r), Data: map[string]any{"Project": p, "Alerts": list}})
+	pg := pageOf(r, "page", int(total), AlertsPerPage, "", true)
+	list, err := q.ListAlerts(r.Context(), db.ListAlertsParams{ProjectID: p.ID, Lim: pg.Limit(), Off: pg.Off()})
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	a.render(w, 200, "alerts", page{Title: "Alerts", Session: sessionFrom(r), Data: map[string]any{"Project": p, "Alerts": list, "Pager": pg}})
 }
 
 func (a *App) setIssueStatus(w http.ResponseWriter, r *http.Request) {

@@ -209,3 +209,12 @@
   </tbody>
 </table>
 {{end}}
+
+{{/* A paged list's footer: {{template "pager" .SomePager}} (see pager.go). */}}
+{{define "pager"}}{{if .Multiple}}
+<nav class="pager" aria-label="Pages">
+  {{if .HasPrev}}<a class="button secondary" href="{{.PrevURL}}" rel="prev">← {{.PrevLabel}}</a>{{else}}<span class="button secondary" aria-disabled="true">← {{.PrevLabel}}</span>{{end}}
+  <span class="muted small">{{.First}}–{{.Last}} of {{.Total}}</span>
+  {{if .HasNext}}<a class="button secondary" href="{{.NextURL}}" rel="next">{{.NextLabel}} →</a>{{else}}<span class="button secondary" aria-disabled="true">{{.NextLabel}} →</span>{{end}}
+</nav>
+{{end}}{{end}}

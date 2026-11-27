@@ -382,10 +382,28 @@ func (q *Queries) LatestSuggestion(ctx context.Context, issueID int64) (FixSugge
 	return i, err
 }
 
+const countAlerts = `-- name: CountAlerts :one
+select count(*) from alert_log where project_id = $1
+`
+
+func (q *Queries) CountAlerts(ctx context.Context, projectID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countAlerts, projectID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const listAlerts = `-- name: ListAlerts :many
 select a.id, a.kind, a.subject, a.sent_at, a.issue_id, a.emailed_to
-from alert_log a where a.project_id = $1 order by a.sent_at desc limit 50
+from alert_log a where a.project_id = $1 order by a.sent_at desc
+limit $2 offset $3
 `
+
+type ListAlertsParams struct {
+	ProjectID int64
+	Lim       int32
+	Off       int32
+}
 
 type ListAlertsRow struct {
 	ID        int64
@@ -396,8 +414,8 @@ type ListAlertsRow struct {
 	EmailedTo []string
 }
 
-func (q *Queries) ListAlerts(ctx context.Context, projectID int64) ([]ListAlertsRow, error) {
-	rows, err := q.db.Query(ctx, listAlerts, projectID)
+func (q *Queries) ListAlerts(ctx context.Context, arg ListAlertsParams) ([]ListAlertsRow, error) {
+	rows, err := q.db.Query(ctx, listAlerts, arg.ProjectID, arg.Lim, arg.Off)
 	if err != nil {
 		return nil, err
 	}
