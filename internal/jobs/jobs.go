@@ -185,6 +185,13 @@ func (w *DigestWorker) Work(ctx context.Context, _ *river.Job[jobargs.DailyDiges
 	if g > 0 {
 		w.Log.Info("growth reports", "count", g)
 	}
+	if err != nil {
+		return err
+	}
+	s, err := w.Notifier.RunSetupNudges(ctx)
+	if s > 0 {
+		w.Log.Info("setup reminders sent", "count", s)
+	}
 	return err
 }
 

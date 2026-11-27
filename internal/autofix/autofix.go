@@ -27,7 +27,6 @@ import (
 
 // Limits.
 const (
-	DailyCap     = 5                // runs claimed per project per 24 hours
 	Lease        = 60 * time.Minute // a claimed run fails if the daemon goes quiet this long
 	OfflineAfter = 10 * time.Minute // no poll for this long: the daemon is offline
 	ApprovalTTL  = 7 * 24 * time.Hour
@@ -167,6 +166,26 @@ func enabled(ctx context.Context, q *db.Queries, projectID int64) (bool, error) 
 	return set.AutofixEnabled, err
 }
 
+// Why an approved run isn't being claimed, though a daemon is polling.
+const (
+	HeldOff  = "off"  // auto-fix was turned off after approving
+	HeldBusy = "busy" // another run is in progress (one at a time)
+)
+
+// Held says which of Claim's gates holds the project's approved runs back,
+// or "" when none does (the next poll takes one). Without it the dashboard
+// says "waiting for the daemon" while the daemon is waiting for us.
+func Held(ctx context.Context, q *db.Queries, projectID int64) (string, error) {
+	if on, err := enabled(ctx, q, projectID); err != nil || !on {
+		return HeldOff, err
+	}
+	running, err := q.ClaimedAutofixRuns(ctx, projectID)
+	if err != nil || running == 0 {
+		return "", err
+	}
+	return HeldBusy, nil
+}
+
 // Approve is the founder approving a waiting run (userID 0: from the
 // signed email link).
 func Approve(ctx context.Context, pool *pgxpool.Pool, projectID, runID, userID int64) (db.AutofixRun, error) {
@@ -213,7 +232,7 @@ const (
 const claimLock int32 = 726_2015
 
 // Claim hands the daemon its next task: a merge approval first (quick), then
-// the oldest approved run, one at a time and at most DailyCap a day. ok is
+// the oldest approved run, one at a time. ok is
 // false when there is nothing to do.
 func Claim(ctx context.Context, pool *pgxpool.Pool, projectID, tokenID int64, now time.Time) (kind string, run db.AutofixRun, ok bool, err error) {
 	err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
@@ -233,11 +252,11 @@ func Claim(ctx context.Context, pool *pgxpool.Pool, projectID, tokenID int64, no
 		if on, err := enabled(ctx, q, projectID); err != nil || !on {
 			return err
 		}
-		c, err := q.ClaimedAutofixRuns(ctx, db.ClaimedAutofixRunsParams{ProjectID: projectID, Since: ts(now.Add(-24 * time.Hour))})
+		running, err := q.ClaimedAutofixRuns(ctx, projectID)
 		if err != nil {
 			return err
 		}
-		if c.Running > 0 || c.Today >= DailyCap {
+		if running > 0 {
 			return nil
 		}
 		for {

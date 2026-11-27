@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -161,5 +163,25 @@ func TestHandler(t *testing.T) {
 	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/v1/pv?sentry_key=k", strings.NewReader(`{"path":"/"}`)))
 	if rec.Code != 204 {
 		t.Errorf("pv: status %d", rec.Code)
+	}
+}
+
+// Every test error is one issue, whatever page or stack it came from.
+func TestClassifyTestError(t *testing.T) {
+	mk := func(page, file, msg string) *Event {
+		var ev Event
+		js := fmt.Sprintf(`{"request":{"url":%q},"exception":{"values":[{"type":"Error","value":%q,"stacktrace":{"frames":[{"filename":%q,"function":"f","in_app":true}]}}]}}`, page, msg, file)
+		if err := json.Unmarshal([]byte(js), &ev); err != nil {
+			t.Fatal(err)
+		}
+		return &ev
+	}
+	k1, f1 := Classify(mk("https://a.example/", "https://a.example/assets/x.js", "Fix Assistant test"))
+	k2, f2 := Classify(mk("https://a.example/pricing/42", "https://ingest.example/sdk/k.js", "Fix Assistant test"))
+	if k1 != KindJS || k2 != KindJS || f1 != f2 {
+		t.Errorf("test errors: %s %s / %s %s", k1, f1, k2, f2)
+	}
+	if _, other := Classify(mk("https://a.example/", "https://a.example/assets/x.js", "Fix Assistant test 2")); other == f1 {
+		t.Error("other errors must not share the test fingerprint")
 	}
 }

@@ -339,3 +339,50 @@ func TestPartitionsRetention(t *testing.T) {
 		t.Errorf("ensure rerun: %v", err)
 	}
 }
+
+// Setup signals: a refused site is remembered for the Setup page (once a
+// minute per host), and the add-on's "stack" event fills in an unknown backend.
+func TestSetupSignals(t *testing.T) {
+	e := setup(t, nil)
+	ctx := context.Background()
+	for i := 0; i < 3; i++ {
+		if resp := e.post(t, "/v1/pv", e.project.PublicKey, "https://preview--spike.lovable.app", []byte(`{"path":"/"}`)); resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("preview origin: status %d, want 403", resp.StatusCode)
+		}
+	}
+	e.post(t, "/v1/pv", e.project.PublicKey, "null", []byte(`{"path":"/"}`))
+	deadline := time.Now().Add(3 * time.Second)
+	for count(t, e.pool, "select count(*) from project_rejected_origins") == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if got := count(t, e.pool, "select count(*) from project_rejected_origins where project_id = $1 and host = 'preview--spike.lovable.app' and hits = 1", e.project.ID); got != 1 {
+		t.Errorf("rejected origin rows = %d, want 1 with 1 hit (throttled)", got)
+	}
+	if got := count(t, e.pool, "select count(*) from project_rejected_origins"); got != 1 {
+		t.Errorf("rows = %d, want 1 (\"null\" is skipped)", got)
+	}
+
+	p, err := e.svc.Create(ctx, projects.CreateParams{Org: "acme", Name: "detect", Agent: "lovable", AllowedDomains: []string{"localhost"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.cache.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	batch := []byte(`{"session_id":"s1","events":[{"type":"stack","name":"supabase"},{"type":"click","name":"Save"}]}`)
+	if resp := e.post(t, "/v1/a", p.PublicKey, "http://localhost:5173", batch); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("analytics: status %d", resp.StatusCode)
+	}
+	if got := count(t, e.pool, "select count(*) from projects where id = $1 and backend = 'supabase'", p.ID); got != 1 {
+		t.Error("backend wasn't detected")
+	}
+	if got := count(t, e.pool, "select count(*) from analytics_events where project_id = $1 and type = 'stack'", p.ID); got != 0 {
+		t.Error("the stack event must not be stored as usage")
+	}
+	// A backend the founder chose is never overwritten.
+	batch = []byte(`{"session_id":"s2","events":[{"type":"stack","name":"firebase"}]}`)
+	e.post(t, "/v1/a", e.project.PublicKey, "http://localhost:5173", batch)
+	if got := count(t, e.pool, "select count(*) from projects where id = $1 and backend = 'supabase'", e.project.ID); got != 1 {
+		t.Error("chosen backend was overwritten")
+	}
+}

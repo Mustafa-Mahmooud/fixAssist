@@ -215,6 +215,28 @@
     return pump();
   }
 
+  // Which backend the app talks to, sent once per session, so the founder
+  // never has to answer "where is your data stored?".
+  var stackSent = false;
+  function detectStack(url) {
+    if (stackSent || typeof url !== "string") return;
+    var host;
+    try {
+      host = new URL(url).hostname;
+    } catch (e) {
+      return;
+    }
+    var name = /\.supabase\.(co|in)$/.test(host) ? "supabase"
+      : /(^|\.)firebaseio\.com$|^(firestore|identitytoolkit|securetoken|firebaseinstallations|firebasestorage)\.googleapis\.com$/.test(host) ? "firebase" : "";
+    if (!name) return;
+    stackSent = true;
+    try {
+      if (sessionStorage.getItem("__fix_stack")) return;
+      sessionStorage.setItem("__fix_stack", name);
+    } catch (e) {}
+    push({ type: "stack", name: name });
+  }
+
   if (w.fetch) {
     var origFetch = w.fetch;
     w.fetch = function (input, init) {
@@ -222,6 +244,7 @@
       var method = ((init && init.method) || (input && input.method) || "GET").toUpperCase();
       var p = origFetch.apply(this, arguments);
       if (isIngest(url)) return p;
+      detectStack(url);
       return p.then(
         function (resp) {
           detectAuth(method, url, resp.status);
@@ -281,6 +304,7 @@
     XHR.send = function () {
       var x = this, meta = x.__fix;
       if (meta && !isIngest(meta.url)) {
+        detectStack(meta.url);
         x.addEventListener("loadend", function () {
           detectAuth(meta.method, meta.url, x.status);
           if (x.status >= 400) {
@@ -422,6 +446,15 @@
     if (!label) return;
     push({ type: "click", name: label, props: { tag: el.tagName.toLowerCase(), role: el.getAttribute("role") || "" } });
   }, true);
+
+  // Setup check: opening the site with ?fixassist-test sends one labelled
+  // error, so founders can see an issue without opening the browser console.
+  // The server groups every test error into a single issue.
+  if (/[?&]fixassist-test(=|&|$)/.test(location.search)) {
+    setTimeout(function () {
+      throw new Error("Fix Assistant test");
+    }, 0);
+  }
 
   if (document.readyState === "complete") setTimeout(firstPageview, 0);
   else w.addEventListener("load", function () { setTimeout(firstPageview, 0); });

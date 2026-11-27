@@ -57,6 +57,7 @@ type Handler struct {
 	Samples  *SampleCap
 	Enrich   *analytics.Enricher // visitor hash + country for usage analytics (optional)
 	Now      func() time.Time
+	signals  signalThrottle
 	// Wrap, if set, instruments each endpoint (obs.Metrics.Wrap).
 	Wrap func(endpoint string, h http.HandlerFunc) http.HandlerFunc
 }
@@ -181,6 +182,7 @@ func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, key, pathProje
 	// cross-origin POSTs, so allowing its absence doesn't open the endpoint
 	// to other websites; the domain list still applies to every browser.
 	if !(origin == "" && allowNoOrigin) && !projects.OriginAllowed(p.AllowedDomains, origin) {
+		h.noteRejectedOrigin(p, origin)
 		h.fail(w, http.StatusForbidden, "origin not allowed for this project", nil)
 		return p, false
 	}

@@ -430,6 +430,16 @@ type Pageview struct {
 	Device      pgtype.Text
 }
 
+type PairCode struct {
+	CodeHash  string
+	ProjectID int64
+	CreatedBy pgtype.Int8
+	CreatedAt pgtype.Timestamptz
+	ExpiresAt pgtype.Timestamptz
+	UsedAt    pgtype.Timestamptz
+	TokenID   pgtype.Int8
+}
+
 type Project struct {
 	ID                    int64
 	OrgID                 int64
@@ -462,6 +472,14 @@ type ProjectKey struct {
 	ProjectID int64
 	CreatedAt pgtype.Timestamptz
 	RevokedAt pgtype.Timestamptz
+}
+
+type ProjectRejectedOrigin struct {
+	ProjectID   int64
+	Host        string
+	FirstSeenAt pgtype.Timestamptz
+	LastSeenAt  pgtype.Timestamptz
+	Hits        int64
 }
 
 type ProjectUsageMonthly struct {

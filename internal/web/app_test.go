@@ -158,7 +158,7 @@ func TestSignInAndProjects(t *testing.T) {
 	if !strings.HasSuffix(resp.Request.URL.Path, "/setup") {
 		t.Fatalf("after create: %s", resp.Request.URL)
 	}
-	for _, want := range []string{"Ask Lovable to install it", "index.html, inside &lt;head&gt;", `data-fix-sdk src=&#34;https://ingest.example.com/sdk/`, `hx-trigger="every 3s"`, "Waiting for the first event",
+	for _, want := range []string{"Ask Lovable to install it", "index.html, inside &lt;head&gt;", `data-fix-sdk src=&#34;https://ingest.example.com/sdk/`, `hx-trigger="every 3s"`, "Waiting for the first visit", "Check my site", "click Publish (top right), then Update", `data-tab="Server errors"`, `data-tab="AI agent"`, `hx-post="/projects/`, "<code>book.lovable.app</code>",
 		"Catch server errors too", "Add server-side error reporting", "@ingest.example.com/", "sentry_sdk.init(dsn=", "builder.WebHost.UseSentry", "Sentry.setupExpressErrorHandler", "No server errors received yet"} {
 		if !strings.Contains(b, want) {
 			t.Errorf("setup page missing %q", want)
@@ -187,7 +187,9 @@ func TestSignInAndProjects(t *testing.T) {
 	if _, err := f.pool.Exec(context.Background(), `insert into pageviews (project_id, route, session_id) values ($1, '/', 's1')`, pid); err != nil {
 		t.Fatal(err)
 	}
-	if b := statusPartial(); !strings.Contains(b, "Connected.") || !strings.Contains(b, "1 page views and 0 errors") || strings.Contains(b, "hx-trigger") {
+	// It keeps polling (slower) until the first issue, and offers a test error.
+	if b := statusPartial(); !strings.Contains(b, "Connected.") || !strings.Contains(b, "1 page views.") ||
+		!strings.Contains(b, `hx-trigger="every 10s"`) || !strings.Contains(b, "https://book.lovable.app/?fixassist-test") {
 		t.Errorf("status partial after a page view: %s", b)
 	}
 	if _, err := f.pool.Exec(context.Background(), `insert into events (project_id, kind, fingerprint) values ($1, 'js', 'v2:x')`, pid); err != nil {
@@ -432,7 +434,7 @@ func TestAdminIsStaffOnly(t *testing.T) {
 		t.Error("admin link shown to a non-staff user")
 	}
 
-	// Staff see every account and can open its app read-only.
+	// Admins see every account and have full access to its apps.
 	ctx := context.Background()
 	var orgID int64
 	_ = f.pool.QueryRow(ctx, "select m.org_id from memberships m join users u on u.id = m.user_id where u.email = 'founder@example.com'").Scan(&orgID)
@@ -451,16 +453,35 @@ func TestAdminIsStaffOnly(t *testing.T) {
 	overview := fmt.Sprintf("%s/projects/%d/overview", srv.URL, p.ID)
 	resp, _ = staff.Get(overview)
 	b := body(t, resp)
-	if resp.StatusCode != 200 || !strings.Contains(b, "Staff view of") {
+	if resp.StatusCode != 200 || !strings.Contains(b, "Admin view of") {
 		t.Errorf("staff overview of another account: %d", resp.StatusCode)
 	}
 	csrf := reCSRF.FindStringSubmatch(b)[1]
 	resp, _ = staff.PostForm(fmt.Sprintf("%s/projects/%d/onboarding/dismiss", srv.URL, p.ID), url.Values{"csrf": {csrf}})
-	if body(t, resp); resp.StatusCode != 404 {
-		t.Errorf("staff POST to another account's app: %d, want 404 (read-only)", resp.StatusCode)
+	if body(t, resp); resp.StatusCode == 404 || resp.StatusCode >= 500 {
+		t.Errorf("staff POST to another account's app: %d, want it to go through (full access)", resp.StatusCode)
+	}
+	// A normal user reaches only their own org's apps: not the admin's.
+	var staffOrg int64
+	_ = f.pool.QueryRow(ctx, "select m.org_id from memberships m join users u on u.id = m.user_id where u.email = 'ops@example.com'").Scan(&staffOrg)
+	sp, err := (&projects.Service{Pool: f.pool}).Create(ctx, projects.CreateParams{OrgID: staffOrg, Name: "ops-shop", Agent: "lovable", Backend: "supabase"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, _ = founder.Get(fmt.Sprintf("%s/projects/%d/overview", srv.URL, sp.ID))
+	body(t, resp)
+	if resp.StatusCode != 404 {
+		t.Errorf("founder GET of another account's app: %d, want 404", resp.StatusCode)
 	}
 	resp, _ = founder.Get(overview)
-	if b := body(t, resp); resp.StatusCode != 200 || strings.Contains(b, "Staff view of") {
+	b = body(t, resp)
+	fcsrf := reCSRF.FindStringSubmatch(b)[1]
+	resp, _ = founder.PostForm(fmt.Sprintf("%s/projects/%d/onboarding/dismiss", srv.URL, sp.ID), url.Values{"csrf": {fcsrf}})
+	if body(t, resp); resp.StatusCode != 404 {
+		t.Errorf("founder POST to another account's app: %d, want 404", resp.StatusCode)
+	}
+	resp, _ = founder.Get(overview)
+	if b := body(t, resp); resp.StatusCode != 200 || strings.Contains(b, "Admin view of") {
 		t.Errorf("owner overview: %d, or shows the staff banner", resp.StatusCode)
 	}
 	// Growth and account detail pages, and the activity they're built on.

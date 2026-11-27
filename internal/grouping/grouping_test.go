@@ -267,3 +267,54 @@ func TestGroupingIdempotentAndRegression(t *testing.T) {
 }
 
 func pgText(s string) pgtype.Text { return pgtype.Text{String: s, Valid: s != ""} }
+
+// A project's first issues are explained after one event; later ones wait
+// for the threshold, and an early one isn't explained again when it gets there.
+func TestEarlyExplain(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	byCase := map[string][]golden{}
+	var cases []string
+	for _, g := range loadGolden(t) {
+		if byCase[g.kase] == nil {
+			cases = append(cases, g.kase)
+		}
+		byCase[g.kase] = append(byCase[g.kase], g)
+	}
+	if len(cases) <= grouping.EarlyExplainIssues {
+		t.Fatalf("need more than %d distinct golden cases, have %d", grouping.EarlyExplainIssues, len(cases))
+	}
+	queued := func() int64 {
+		return scalar[int64](t, f.pool, "select count(distinct (args->>'issue_id')) from river_job where kind = 'analyze_issue'")
+	}
+	for _, c := range cases[:grouping.EarlyExplainIssues+1] {
+		f.send(t, byCase[c][0].body)
+		f.waitGrouped(t)
+	}
+	if n := scalar[int64](t, f.pool, "select count(*) from issues"); n != int64(grouping.EarlyExplainIssues+1) {
+		t.Fatalf("issues = %d", n)
+	}
+	if got := queued(); got != int64(grouping.EarlyExplainIssues) {
+		t.Errorf("issues queued for explanation after one event = %d, want %d", got, grouping.EarlyExplainIssues)
+	}
+	last := scalar[int64](t, f.pool, "select max(id) from issues")
+	if n := scalar[int64](t, f.pool, "select count(*) from river_job where kind = 'analyze_issue' and (args->>'issue_id')::bigint = $1", last); n != 0 {
+		t.Error("the 4th issue must wait for the threshold")
+	}
+
+	// The first issue reaches the threshold (3 events). With the earlier
+	// jobs gone River can't dedupe, so only the early rule keeps it quiet.
+	if _, err := f.pool.Exec(ctx, "delete from river_job where kind = 'analyze_issue'"); err != nil {
+		t.Fatal(err)
+	}
+	first := byCase[cases[0]][0].body
+	f.send(t, first)
+	f.send(t, first)
+	f.waitGrouped(t)
+	if n := scalar[int64](t, f.pool, "select event_count from issues order by id limit 1"); n < int64(grouping.AnalyzeMinEvents) {
+		t.Fatalf("first issue has %d events", n)
+	}
+	if got := queued(); got != 0 {
+		t.Errorf("early issue explained again at the threshold (%d jobs)", got)
+	}
+}

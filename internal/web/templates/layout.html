@@ -23,7 +23,7 @@
       <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.Session.CSRF}}"><button class="link small">Sign out</button></form>
     </div>
   </header>
-  <main id="main">{{if .Session.StaffView}}<p class="flash staff-view">Staff view of <b>{{.Session.StaffView}}</b>'s app. Read-only: buttons here won't work for you. <a href="/admin/accounts">All accounts</a></p>{{end}}{{template "content" .}}</main>
+  <main id="main">{{if .Session.StaffView}}<p class="flash staff-view">Admin view of <b>{{.Session.StaffView}}</b>'s app. You have full access: changes you make here apply to their account. <a href="/admin/accounts">All accounts</a></p>{{end}}{{template "content" .}}</main>
 {{else}}
   <main id="main" class="narrow">{{template "content" .}}</main>
 {{end}}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -85,15 +86,30 @@ func (c *client) do(ctx context.Context, method, path string, in, out any) error
 		var e struct {
 			Error string `json:"error"`
 		}
+		msg := resp.Status
 		if json.Unmarshal(b, &e) == nil && e.Error != "" {
-			return fmt.Errorf("%s: %s", resp.Status, e.Error)
+			msg += ": " + e.Error
 		}
-		return fmt.Errorf("%s", resp.Status)
+		return &statusError{code: resp.StatusCode, msg: msg}
 	}
 	if out == nil {
 		return nil
 	}
 	return json.Unmarshal(b, out)
+}
+
+// statusError is a non-200 answer from Fix Assistant.
+type statusError struct {
+	code int
+	msg  string
+}
+
+func (e *statusError) Error() string { return e.msg }
+
+// unauthorized says the server rejected the token (revoked or replaced).
+func unauthorized(err error) bool {
+	var se *statusError
+	return errors.As(err, &se) && se.code == http.StatusUnauthorized
 }
 
 // claim long-polls for the next task; nil when there is none.

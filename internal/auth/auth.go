@@ -67,8 +67,8 @@ type Session struct {
 	Staff bool
 	// Owner: listed in STAFF_EMAILS, so always admin; set by the web layer.
 	Owner bool
-	// StaffView: the other account's name while staff look at its project
-	// (read-only); set by the web layer, empty otherwise.
+	// StaffView: the other account's name while an admin works on its
+	// project (full access); set by the web layer, empty otherwise.
 	StaffView string
 	// TipsHidden: the person turned off the "what this page shows" notes.
 	TipsHidden bool

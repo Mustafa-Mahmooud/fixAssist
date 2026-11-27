@@ -143,16 +143,29 @@
     document.body.classList.add("loading");
   });
 
-  // Back button (page restored from cache): undo the "working" state.
-  window.addEventListener("pageshow", function (e) {
-    if (!e.persisted) return;
-    document.body.classList.remove("loading");
-    document.querySelectorAll("form[data-sending]").forEach(function (f) { delete f.dataset.sending; });
-    document.querySelectorAll("button.busy").forEach(function (b) {
+  function unbusy(root) {
+    if (root.matches && root.matches("form[data-sending]")) delete root.dataset.sending;
+    root.querySelectorAll("form[data-sending]").forEach(function (f) { delete f.dataset.sending; });
+    root.querySelectorAll("button.busy").forEach(function (b) {
       b.classList.remove("busy");
       b.disabled = false;
       if (b.dataset.label && b.getAttribute("data-busy")) b.textContent = b.dataset.label;
     });
+  }
+
+  // Back button (page restored from cache): undo the "working" state.
+  window.addEventListener("pageshow", function (e) {
+    if (!e.persisted) return;
+    document.body.classList.remove("loading");
+    unbusy(document);
+  });
+
+  // htmx forms (Check my site) stay on the page: ready them for another go.
+  document.addEventListener("htmx:afterRequest", function (e) {
+    var form = e.detail && e.detail.elt && e.detail.elt.closest && e.detail.elt.closest("form");
+    if (!form) return;
+    document.body.classList.remove("loading");
+    unbusy(form);
   });
 
   // ---------- Top progress bar on navigation and user-started htmx requests ----------
@@ -391,8 +404,56 @@
     schedule();
   }
 
+  // ---------- Tabs: <div data-tabs> with <section id data-tab="Label"> children ----------
+  // Without JS every section shows. Links to a section's #id (or anything
+  // inside it) open its tab, so checklist links like /setup#agent-loop work.
+  function setupTabs(box) {
+    var panels = Array.prototype.filter.call(box.children, function (el) { return el.hasAttribute("data-tab"); });
+    if (panels.length < 2) return;
+    var nav = document.createElement("div");
+    nav.className = "tab-nav";
+    nav.setAttribute("role", "tablist");
+    var buttons = panels.map(function (p) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "tab";
+      b.setAttribute("role", "tab");
+      b.textContent = p.getAttribute("data-tab");
+      b.addEventListener("click", function () {
+        show(p);
+        if (p.id && history.replaceState) history.replaceState(null, "", "#" + p.id);
+      });
+      nav.appendChild(b);
+      return b;
+    });
+    box.insertBefore(nav, box.firstChild);
+    function show(target) {
+      panels.forEach(function (p, i) {
+        var on = p === target;
+        p.hidden = !on;
+        buttons[i].classList.toggle("on", on);
+        buttons[i].setAttribute("aria-selected", on ? "true" : "false");
+      });
+    }
+    function fromHash() {
+      var id = location.hash.slice(1);
+      var el = id && document.getElementById(id);
+      var panel = el && panels.filter(function (p) { return p === el || p.contains(el); })[0];
+      if (panel) {
+        show(panel);
+        // The browser scrolled before the tab was shown: scroll again.
+        requestAnimationFrame(function () { el.scrollIntoView({ block: "start" }); });
+        return true;
+      }
+      return false;
+    }
+    if (!fromHash()) show(panels[0]);
+    window.addEventListener("hashchange", fromHash);
+  }
+
   ready(function () {
     formatNumbers(document);
     startLive();
+    document.querySelectorAll("[data-tabs]").forEach(setupTabs);
   });
 })();

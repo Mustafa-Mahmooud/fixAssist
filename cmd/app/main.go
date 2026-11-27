@@ -205,7 +205,8 @@ func serve(ctx context.Context, log *slog.Logger, args []string) error {
 	secret := appSecret(log)
 	notifier := &alerts.Notifier{
 		Pool: pool, Sender: sender, BaseURL: appBase(*addr), EmailOff: alerts.Off(),
-		Prompt: ai.PromptForRow, Log: log,
+		IngestBase: ingestBase(*addr),
+		Prompt:     ai.PromptForRow, Log: log,
 		FeedbackLink: func(sid int64, outcome string) string {
 			return web.FeedbackLink(appBase(*addr), secret, sid, outcome, time.Now())
 		},
@@ -280,7 +281,7 @@ func serve(ctx context.Context, log *slog.Logger, args []string) error {
 			Log:        log,
 		}).Register(mux)
 		// The agent loop: MCP at /mcp, JSON at /agent/v1 (agent tokens).
-		(&agentapi.Handler{Pool: pool, Code: code, Model: model, Log: log}).Register(mux)
+		(&agentapi.Handler{Pool: pool, Code: code, Model: model, Log: log, ClientIP: enrich.ClientIP}).Register(mux)
 		// The auto-fix helper's downloads and install scripts.
 		(&web.Downloads{Dir: os.Getenv("FIXASSIST_DOWNLOADS"), BaseURL: base}).Register(mux)
 		log.Info("dashboard", "url", base)

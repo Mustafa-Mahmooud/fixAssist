@@ -31,6 +31,23 @@ func (w *worker) logf(format string, args ...any) {
 	logf("[%s] "+format, append([]any{w.p.Name}, args...)...)
 }
 
+// reloadToken picks up a new token for this app from the config file
+// (`fixassist add` again after the old token was revoked), so a running
+// watcher doesn't keep retrying a dead token until it is restarted.
+func (w *worker) reloadToken() bool {
+	cfg, _, err := loadConfig()
+	if err != nil {
+		return false
+	}
+	for _, p := range cfg.Projects {
+		if p.Repo == w.p.Repo && p.Server == w.p.Server && p.Token != w.p.Token {
+			w.p, w.c = p, newClient(p)
+			return true
+		}
+	}
+	return false
+}
+
 // loop claims and works tasks one at a time until ctx ends.
 func (w *worker) loop(ctx context.Context) {
 	backoff := 5 * time.Second
@@ -44,6 +61,11 @@ func (w *worker) loop(ctx context.Context) {
 		if err != nil {
 			if ctx.Err() != nil {
 				return
+			}
+			if unauthorized(err) && w.reloadToken() {
+				w.logf("the agent token changed in the config: using the new one")
+				backoff = 5 * time.Second
+				continue
 			}
 			w.logf("can't reach Fix Assistant: %v (retrying in %s)", err, backoff)
 			sleep(ctx, backoff)

@@ -31,6 +31,21 @@ func codeText(s string) template.HTML {
 }
 
 var funcs = template.FuncMap{
+	"alertKind": func(k string) string {
+		switch k {
+		case "digest":
+			return "Daily summary"
+		case "growth":
+			return "Weekly ideas"
+		case "quota80", "quota100":
+			return "Usage"
+		case "autofix":
+			return "Auto-fix"
+		case "setup_install", "setup_test":
+			return "Setup reminder"
+		}
+		return k
+	},
 	"code":    codeText,
 	"list":    func(s ...string) []string { return s },
 	"inc":     func(i int) int { return i + 1 },

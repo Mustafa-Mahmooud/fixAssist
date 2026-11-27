@@ -63,11 +63,9 @@ where id = @id and project_id = @project_id and state = 'awaiting_merge_approval
 returning *;
 
 -- name: ClaimedAutofixRuns :one
--- Runs claimed in the window (the daily cap) and in progress right now
--- (one at a time).
-select count(*) filter (where claimed_at > @since)::bigint as today,
-       count(*) filter (where state = 'claimed')::bigint as running
-from autofix_runs where project_id = @project_id;
+-- Runs in progress right now (one at a time).
+select count(*)::bigint as running
+from autofix_runs where project_id = @project_id and state = 'claimed';
 
 -- name: NextApprovedAutofixRun :one
 select * from autofix_runs

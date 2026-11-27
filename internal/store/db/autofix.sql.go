@@ -184,28 +184,16 @@ func (q *Queries) ClaimAutofixRun(ctx context.Context, arg ClaimAutofixRunParams
 }
 
 const claimedAutofixRuns = `-- name: ClaimedAutofixRuns :one
-select count(*) filter (where claimed_at > $1)::bigint as today,
-       count(*) filter (where state = 'claimed')::bigint as running
-from autofix_runs where project_id = $2
+select count(*)::bigint as running
+from autofix_runs where project_id = $1 and state = 'claimed'
 `
 
-type ClaimedAutofixRunsParams struct {
-	Since     pgtype.Timestamptz
-	ProjectID int64
-}
-
-type ClaimedAutofixRunsRow struct {
-	Today   int64
-	Running int64
-}
-
-// Runs claimed in the window (the daily cap) and in progress right now
-// (one at a time).
-func (q *Queries) ClaimedAutofixRuns(ctx context.Context, arg ClaimedAutofixRunsParams) (ClaimedAutofixRunsRow, error) {
-	row := q.db.QueryRow(ctx, claimedAutofixRuns, arg.Since, arg.ProjectID)
-	var i ClaimedAutofixRunsRow
-	err := row.Scan(&i.Today, &i.Running)
-	return i, err
+// Runs in progress right now (one at a time).
+func (q *Queries) ClaimedAutofixRuns(ctx context.Context, projectID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, claimedAutofixRuns, projectID)
+	var running int64
+	err := row.Scan(&running)
+	return running, err
 }
 
 const countAutofixAlertsSince = `-- name: CountAutofixAlertsSince :one

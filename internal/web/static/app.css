@@ -194,6 +194,15 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 input[type=checkbox] { width: 1.05rem; height: 1.05rem; accent-color: var(--accent); vertical-align: -0.15em; margin-right: .35rem; }
 label:has(input[type=checkbox]) { font-weight: 500; cursor: pointer; }
 
+/* Builder tiles on the new-app form */
+.tiles { border: 0; padding: 0; margin: 1rem 0 0; min-width: 0; }
+.tiles legend { font-weight: 600; padding: 0; margin-bottom: .4rem; }
+.tiles .tile { display: inline-flex; margin: 0 .4rem .4rem 0; cursor: pointer; font-weight: 500; }
+.tiles .tile input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.tiles .tile span { display: inline-block; padding: .5rem .9rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.tiles .tile input:checked + span { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent); }
+.tiles .tile input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 button, .button {
   display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
   padding: .55rem 1rem; font: inherit; font-weight: 600; line-height: 1.3; cursor: pointer;
@@ -288,6 +297,17 @@ td .sub { display: block; margin-top: .1rem; }
 .tabs a:hover { color: var(--text); background: var(--neutral-soft); text-decoration: none; }
 .tabs a.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); background: var(--accent-soft); }
 .tabs .count { font-size: .72rem; padding: 0 .4rem; border-radius: 999px; background: var(--bad); color: #fff; font-weight: 700; }
+/* Setup's optional extras: same look as the filter tabs, built by app.js */
+.builder-steps { margin: .75rem 0 0; padding-left: 1.25rem; color: var(--muted); }
+.builder-steps li { margin: .2rem 0; }
+.tab-nav { display: flex; gap: .25rem; flex-wrap: wrap; margin: .5rem 0 .75rem; }
+.tab-nav .tab {
+  display: inline-flex; align-items: center; padding: .38rem .8rem; border-radius: 999px; font: inherit; font-weight: 550;
+  color: var(--muted); background: transparent; border: 1px solid transparent; cursor: pointer; box-shadow: none;
+}
+.tab-nav .tab:hover { color: var(--text); background: var(--neutral-soft); }
+.tab-nav .tab.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); background: var(--accent-soft); }
+[data-tabs] > section[hidden] { display: none; }
 
 /* The main project navigation: one line that scrolls sideways on small screens. */
 nav.tabs.main-tabs {
@@ -325,6 +345,10 @@ p.kind { display: flex; flex-wrap: wrap; gap: .4rem; }
 .flash.error { border-color: color-mix(in srgb, var(--bad) 35%, transparent); background: var(--bad-soft); color: var(--bad); }
 .flash.error a { color: inherit; text-decoration: underline; }
 .flash.good { border-color: color-mix(in srgb, var(--ok) 35%, transparent); background: var(--ok-soft); }
+.flash.warn { border-color: color-mix(in srgb, var(--warn) 35%, transparent); background: var(--warn-soft); }
+.flash.celebrate { margin: 0 0 .5rem; }
+#site-check { margin: .5rem 0; }
+#site-check:empty { display: none; }
 .flash.staff-view { border-style: dashed; margin: 0 0 1rem; }
 .flash.staff-view a { text-decoration: underline; }
 

@@ -33,7 +33,7 @@ func TestOnboarding(t *testing.T) {
 	// No app yet: the welcome page explains the loop and has the form.
 	must(get("/projects"), "Welcome to Fix Assistant", "How it works", "It checks the fix", "Add your first app", `action="/projects"`)
 
-	resp, _ := c.PostForm(f.srv.URL+"/projects", url.Values{"csrf": {csrf}, "name": {"Shop"}, "agent": {"lovable"}, "backend": {"supabase"}})
+	resp, _ := c.PostForm(f.srv.URL+"/projects", url.Values{"csrf": {csrf}, "address": {"https://shop.lovable.app/"}, "name": {"Shop"}, "agent": {"lovable"}})
 	b := body(t, resp)
 	setupPath := resp.Request.URL.Path
 	base := strings.TrimSuffix(setupPath, "/setup")
@@ -55,7 +55,7 @@ func TestOnboarding(t *testing.T) {
 	}
 	// The first visit ticks "Install the snippet".
 	exec("insert into pageviews (project_id, route, session_id) values ($1, '/', 's1')", pid)
-	must(get(base+"/overview"), "2 of 4 done", "Fix Assistant test", "What this page shows:")
+	must(get(base+"/overview"), "2 of 4 done", "Send a test error", `href="https://shop.lovable.app/?fixassist-test" target="_blank"`, "What this page shows:")
 	// The first issue, then its explanation.
 	var issueID int64
 	if err := f.pool.QueryRow(ctx, `insert into issues (project_id, fingerprint, kind, signature, title, route, first_seen_at, last_seen_at)

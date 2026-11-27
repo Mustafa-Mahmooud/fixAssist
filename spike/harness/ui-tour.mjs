@@ -39,10 +39,10 @@ async function signup(browser) {
   await page.waitForURL(/\/projects$/);
   if (!(await page.locator(`.project-card a.name:has-text("${PROJECT}")`).count())) {
     await page.screenshot({ path: join(OUT, "02-projects-empty.png"), fullPage: true });
+    await page.fill("#address", "localhost");
+    await page.check("input[name=agent][value=lovable]", { force: true });
+    await page.click("summary:has-text('different name')");
     await page.fill("#name", PROJECT);
-    await page.selectOption("#agent", "lovable");
-    await page.selectOption("#backend", "supabase");
-    await page.fill("#domains", "localhost");
     await page.click("form[action='/projects'] button[type=submit]");
   } else {
     await page.click(`.project-card:has-text("${PROJECT}") a:has-text("Setup")`);

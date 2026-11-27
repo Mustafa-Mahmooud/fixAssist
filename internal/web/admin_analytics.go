@@ -104,7 +104,7 @@ func (a *App) loadAccounts(r *http.Request) ([]accountView, int, error) {
 }
 
 // adminAccounts lists every account with its people and apps. Each app links
-// into the normal project pages, which staff can open read-only.
+// into the normal project pages, where admins have full access.
 func (a *App) adminAccounts(w http.ResponseWriter, r *http.Request) {
 	list, apps, err := a.loadAccounts(r)
 	if err != nil {
@@ -239,6 +239,13 @@ func (a *App) adminGrowth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setupRows, err := q.AdminSetupTimes(ctx)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	setupSteps, nudges := setupTimes(setupRows)
+
 	// Activation funnel: how many accounts reached each stage.
 	reached := make([]int64, len(stages))
 	for _, v := range list {
@@ -311,7 +318,7 @@ func (a *App) adminGrowth(w http.ResponseWriter, r *http.Request) {
 		"IssuesTrend":   trend(float64(t.Issues30d), float64(t.IssuesPrev)),
 		"CostTrend":     trend(t.AiCost30d, t.AiCostPrev),
 		"Stickiness":    percent(t.ActiveUsers7d, t.ActiveUsers30d),
-		"Funnel":        funnel, "Recent": recent, "Charts": charts,
+		"Funnel":        funnel, "Recent": recent, "Charts": charts, "SetupSteps": setupSteps, "Nudges": nudges, "SetupApps": len(setupRows),
 		"Issues": issues, "Kinds": kinds, "Builders": builders, "Models": models, "Costs": costs,
 	}})
 }

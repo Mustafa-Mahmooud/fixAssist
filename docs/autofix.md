@@ -42,7 +42,7 @@ The [agent loop](agent-loop.md) only runs when the founder asks their coding age
    - **Rule "ask me" (default):** the run is `pending_approval`, and the founder gets an email with **Auto-fix this**. The link opens a confirm page; only the POST approves, because mail scanners open links. There are at most 10 auto-fix emails per project per day.
    - **Rule "high":** the run is approved by the rule.
    - **"Auto-fix this" on any issue page:** starts an approved run, whatever the severity.
-2. The daemon claims the oldest approved run. There is one run at a time per project, at most 5 a day, and none while auto-fix is off. A claim takes a 60-minute lease, and the daemon sends a heartbeat every 5 minutes.
+2. The daemon claims the oldest approved run. There is one run at a time per project (no daily limit), and none while auto-fix is off. A claim takes a 60-minute lease, and the daemon sends a heartbeat every 5 minutes.
 3. The daemon works on the run:
    1. Fetches the base branch and creates a new **git worktree** on `fixassist/issue-N-run-M`, so the founder's checkout is never touched.
    2. Runs `claude -p` with the prompt (see Safety below).

@@ -55,7 +55,7 @@ func TestAutofixDashboard(t *testing.T) {
 	// No daemon yet: the switch can't be turned on.
 	resp, _ := founder.Get(base + "/setup")
 	b := body(t, resp)
-	for _, want := range []string{`id="autofix"`, "No daemon has connected yet", "fixassist add --server " + srv.URL, "irm " + srv.URL + "/install/fixassist.ps1 | iex", "curl -fsSL " + srv.URL + "/install/fixassist.sh | sh", `href="/download/fixassist/fixassist-windows-amd64.exe"`, `name="enabled"  disabled`} {
+	for _, want := range []string{`id="autofix"`, "No computer connected yet", "Get my install command", "fixassist add --server " + srv.URL, "irm " + srv.URL + "/install/fixassist.ps1 | iex", "curl -fsSL " + srv.URL + "/install/fixassist.sh | sh", `href="/download/fixassist/fixassist-windows-amd64.exe"`, `name="enabled"  disabled`} {
 		if !strings.Contains(b, want) {
 			t.Errorf("setup missing %q", want)
 		}
@@ -148,5 +148,43 @@ func TestAutofixDashboard(t *testing.T) {
 	resp, _ = founder.PostForm(issueURL+"/autofix", url.Values{"csrf": {csrf}})
 	if b := body(t, resp); !strings.Contains(b, "Approved, waiting for the daemon") {
 		t.Errorf("start: %d", resp.StatusCode)
+	}
+	if b := body(t, resp); strings.Contains(b, "Your daemon is connected, but") {
+		t.Error("nothing holds the run, but the page says something does")
+	}
+
+	// The daemon is polling but the server won't hand the run out: the page
+	// says why instead of "waiting for the daemon".
+	held := func(why, setup string) {
+		t.Helper()
+		if _, err := f.pool.Exec(ctx, setup, p.ID); err != nil {
+			t.Fatal(err)
+		}
+		resp, _ := founder.Get(issueURL)
+		if b := body(t, resp); !strings.Contains(b, why) {
+			t.Errorf("held run: page doesn't say %q", why)
+		}
+	}
+	held("auto-fix is turned off", `update projects set autofix_enabled = false where id = $1`)
+	if _, err := f.pool.Exec(ctx, `update projects set autofix_enabled = true where id = $1`, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	// A run on another issue is in progress.
+	held("working on another fix first", `with other as (
+		insert into issues (project_id, fingerprint, kind, signature, title, route, status, first_seen_at, last_seen_at, event_count)
+		values ($1, 'fp2', 'net', 'sig2', 'Login fails', '/login', 'explained', now(), now(), 1) returning id, project_id)
+		insert into autofix_runs (project_id, issue_id, state, claimed_at) select project_id, id, 'claimed', now() from other`)
+	if _, err := f.pool.Exec(ctx, `update autofix_runs set state = 'failed' where project_id = $1 and state = 'claimed'`, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	// No daily limit: many fixes today don't hold the next one.
+	if _, err := f.pool.Exec(ctx, `insert into autofix_runs (project_id, issue_id, state, claimed_at)
+		select project_id, issue_id, 'failed', now() from autofix_runs, generate_series(1, 9)
+		where project_id = $1 and state = 'failed'`, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	resp, _ = founder.Get(issueURL)
+	if b := body(t, resp); strings.Contains(b, "Your daemon is connected, but") {
+		t.Error("ten fixes today hold the next one")
 	}
 }

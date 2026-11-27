@@ -102,7 +102,7 @@ func (a *App) githubSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	projectID, _ := strconv.ParseInt(parts[0], 10, 64)
-	if _, err := db.New(a.Pool).GetOrgProject(r.Context(), db.GetOrgProjectParams{ID: projectID, OrgID: s.OrgID}); err != nil {
+	if _, err := a.accessProject(r.Context(), s, projectID); err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -132,7 +132,7 @@ func (a *App) githubSetup(w http.ResponseWriter, r *http.Request) {
 	if repos, err := a.GitHub.Repos(r.Context(), installationID); err == nil && len(repos) == 1 {
 		_, _ = q.SetProjectRepo(r.Context(), db.SetProjectRepoParams{ProjectID: projectID, RepoFullName: pgtype.Text{String: repos[0], Valid: true}})
 	}
-	http.Redirect(w, r, fmt.Sprintf("/projects/%d/setup", projectID), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/projects/%d/setup#code", projectID), http.StatusSeeOther)
 }
 
 func (a *App) githubChooseRepo(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +161,7 @@ func (a *App) githubChooseRepo(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/projects/%d/setup", p.ID), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/projects/%d/setup#code", p.ID), http.StatusSeeOther)
 }
 
 func (a *App) githubDisconnect(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +173,7 @@ func (a *App) githubDisconnect(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/projects/%d/setup", p.ID), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/projects/%d/setup#code", p.ID), http.StatusSeeOther)
 }
 
 // --- staff: create the GitHub App from a manifest --------------------------

@@ -150,7 +150,8 @@
     {{if .PrUrl}}<p><a class="button secondary" href="{{.PrUrl}}" rel="noopener">Review the pull request</a></p>{{end}}
     {{if .Summary}}<p class="muted small">What the agent changed: {{code .Summary}}</p>{{end}}
     {{if .Error}}<p class="muted small">{{.Error}}</p>{{end}}
-    {{if and (eq .State "approved") (not $af.Online)}}<p class="muted small">The daemon on your computer is offline. Turn your computer on, or run <code>fixassist install</code> so it keeps running; otherwise we'll email you the fix to paste in a few minutes.</p>{{end}}
+    {{if and (eq .State "approved") (not $af.Online)}}<p class="muted small">The daemon on your computer is offline. Turn your computer on, or run <code>fixassist install</code> so it keeps running; otherwise we'll email you the fix to paste in a few minutes.</p>
+    {{else if eq .State "approved"}}{{with $af.Held}}<p class="muted small">Your daemon is connected, but {{if eq . "off"}}auto-fix is turned off for this app, so approved fixes wait. <a href="/projects/{{$p.ID}}/setup#autofix">Turn it back on in Setup</a>.{{else if eq . "busy"}}it's working on another fix first: it does one at a time, and starts this one when that finishes.{{end}}</p>{{end}}{{end}}
     {{if not $.Session.StaffView}}
     <div class="row">
       {{if eq .State "pending_approval"}}

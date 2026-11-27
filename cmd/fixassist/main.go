@@ -25,7 +25,7 @@ import (
 	"time"
 )
 
-const version = "0.2.0"
+const version = "0.2.1"
 
 // Project is one app the daemon fixes.
 type Project struct {
@@ -85,6 +85,9 @@ func saveConfig(c Config, path string) error {
 func usage() {
 	fmt.Fprint(os.Stderr, `fixassist: the Fix Assistant auto-fix daemon
 
+  fixassist pair --server URL --code CODE [--repo PATH]
+      Connect an app with the one-time code from the Setup page (the
+      install command there runs this for you, in the current folder).
   fixassist add --server URL --token fa_... --repo PATH [--base main] [--test "npm test"]
       Connect an app: its agent token (Setup page) and its local git clone.
   fixassist list
@@ -113,6 +116,8 @@ func main() {
 	}
 	var err error
 	switch os.Args[1] {
+	case "pair":
+		err = cmdPair(os.Args[2:])
 	case "add":
 		err = cmdAdd(os.Args[2:])
 	case "list":
@@ -137,6 +142,9 @@ func main() {
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "fixassist:", err)
+		if errors.Is(err, errMissingTools) {
+			os.Exit(3)
+		}
 		os.Exit(1)
 	}
 }
@@ -151,28 +159,46 @@ func cmdAdd(args []string) error {
 	test := fs.String("test", "", "optional command that must pass before a pull request is opened")
 	_ = fs.Parse(args)
 	if *server == "" || !strings.HasPrefix(*token, "fa_") {
-		return errors.New("--server and --token (fa_...) are required")
+		return errors.New("--server and --token (fa_...) are required. Easier: on the Setup page, click \"Get my install command\" under Auto-fix and run it in your code folder")
 	}
-	abs, err := filepath.Abs(*repo)
+	p, err := addProject(context.Background(), *server, *token, *repo, *base, *remote, *test)
 	if err != nil {
 		return err
 	}
-	ctx := context.Background()
+	fmt.Printf("Connected %s (pull requests into %s). Now run: fixassist watch\n", p.Repo, p.Base)
+	return nil
+}
+
+// gitRepo is the absolute path of repo, if it is a git repository.
+func gitRepo(ctx context.Context, repo string) (string, error) {
+	abs, err := filepath.Abs(repo)
+	if err != nil {
+		return "", err
+	}
 	if _, err := git(ctx, abs, "rev-parse", "--git-dir"); err != nil {
-		return fmt.Errorf("%s is not a git repository", abs)
+		return "", fmt.Errorf("%s is not a git repository: run this in your app's code folder (the one you cloned from GitHub)", abs)
 	}
-	if *base == "" {
-		*base = defaultBranch(ctx, abs, *remote)
+	return abs, nil
+}
+
+// addProject checks the token and saves the app to the config.
+func addProject(ctx context.Context, server, token, repo, base, remote, test string) (Project, error) {
+	abs, err := gitRepo(ctx, repo)
+	if err != nil {
+		return Project{}, err
 	}
-	p := Project{Server: strings.TrimRight(*server, "/"), Token: *token, Repo: abs, Base: *base, Remote: *remote, Test: *test}
+	if base == "" {
+		base = defaultBranch(ctx, abs, remote)
+	}
+	p := Project{Server: strings.TrimRight(server, "/"), Token: token, Repo: abs, Base: base, Remote: remote, Test: test}
 	c := newClient(p)
 	if _, err := c.prs(ctx); err != nil {
-		return fmt.Errorf("couldn't reach Fix Assistant with this token: %w", err)
+		return p, fmt.Errorf("couldn't reach Fix Assistant with this token: %w", err)
 	}
 	p.Name = filepath.Base(abs)
 	cfg, path, err := loadConfig()
 	if err != nil {
-		return err
+		return p, err
 	}
 	kept := cfg.Projects[:0]
 	for _, x := range cfg.Projects {
@@ -181,11 +207,7 @@ func cmdAdd(args []string) error {
 		}
 	}
 	cfg.Projects = append(kept, p)
-	if err := saveConfig(cfg, path); err != nil {
-		return err
-	}
-	fmt.Printf("Connected %s (pull requests into %s). Now run: fixassist watch\n", abs, p.Base)
-	return nil
+	return p, saveConfig(cfg, path)
 }
 
 func cmdList() error {
@@ -240,14 +262,17 @@ func cmdWatch(args []string) error {
 		}
 		defer f.Close()
 		out = f
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx = takeOver(ctx)
+	if *logPath != "" {
 		// In the background nobody sees errors, and the service manager
 		// can't always tell it stopped (Windows' conhost reports success),
 		// so retry here: log what went wrong, wait a minute, try again. A
 		// missing tool or a signed-out gh then fixes itself once installed.
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
 		for {
-			err := watchSafely()
+			err := watchSafely(ctx)
 			if ctx.Err() != nil {
 				return nil
 			}
@@ -258,23 +283,23 @@ func cmdWatch(args []string) error {
 			}
 		}
 	}
-	return watch()
+	return watch(ctx)
 }
 
 // watchSafely is watch, with a crash turned into an error.
-func watchSafely() (err error) {
+func watchSafely(ctx context.Context) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("crashed: %v", r)
 		}
 	}()
-	if err = watch(); err == nil {
+	if err = watch(ctx); err == nil {
 		err = errors.New("watch ended")
 	}
 	return err
 }
 
-func watch() error {
+func watch(ctx context.Context) error {
 	cfg, _, err := loadConfig()
 	if err != nil {
 		return err
@@ -287,12 +312,10 @@ func watch() error {
 			return fmt.Errorf("%s isn't installed or isn't on PATH", tool)
 		}
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	if _, err := run(ctx, "", nil, "gh", "auth", "status"); err != nil {
 		return errors.New("the GitHub CLI isn't signed in: run gh auth login")
 	}
-	logf("fixassist %s watching %d app(s). Press Ctrl+C to stop.", version, len(cfg.Projects))
+	logf("fixassist %s (pid %d) watching %d app(s). Press Ctrl+C to stop.", version, os.Getpid(), len(cfg.Projects))
 	var wg sync.WaitGroup
 	for _, p := range cfg.Projects {
 		wg.Add(1)

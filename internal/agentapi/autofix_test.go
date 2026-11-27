@@ -274,7 +274,7 @@ func TestAutofixRuleNeedsMergeApproval(t *testing.T) {
 	}
 }
 
-func TestAutofixDailyCapAndOff(t *testing.T) {
+func TestAutofixNoDailyCapAndOff(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	f.setAutofix(true, autofix.RuleHigh)
@@ -286,21 +286,15 @@ func TestAutofixDailyCapAndOff(t *testing.T) {
 		t.Fatalf("claimed while off: %v", task)
 	}
 	f.setAutofix(true, autofix.RuleHigh)
-	// Five runs already claimed today: the cap.
-	for i := range autofix.DailyCap {
-		other := f.storeEvent(f.pid, []string{"node_null_property", "node_null_property_2", "node_numeric_overflow", "node_unique_chain", "python_bad_format"}[i])
+	// Five runs already claimed today: no daily cap, it's still handed out.
+	for _, name := range []string{"node_null_property", "node_null_property_2", "node_numeric_overflow", "node_unique_chain", "python_bad_format"} {
+		other := f.storeEvent(f.pid, name)
 		if _, err := f.pool.Exec(ctx, `insert into autofix_runs (project_id, issue_id, state, claimed_at) values ($1, $2, 'failed', now() - interval '1 hour')`, f.pid, other); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if task := f.claim(f.token); task != nil {
-		t.Fatalf("claimed over the daily cap: %v", task)
-	}
-	if _, err := f.pool.Exec(ctx, `update autofix_runs set claimed_at = now() - interval '25 hours' where state = 'failed'`); err != nil {
-		t.Fatal(err)
-	}
 	if task := f.claim(f.token); task == nil || num(task["run_id"]) != run.ID {
-		t.Fatalf("after the window: %v", task)
+		t.Fatalf("five runs today held the next one: %v", task)
 	}
 }
 

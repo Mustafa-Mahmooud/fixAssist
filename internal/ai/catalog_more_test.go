@@ -50,6 +50,9 @@ type catalogCase struct {
 func catalogMoreCases() []catalogCase {
 	const sb = "https://abc.supabase.co"
 	return []catalogCase{
+		// Setup.
+		{"setup test error", jsC("/", "Error", "Fix Assistant test"), "setup.test_error", []string{"Nothing to fix"}},
+
 		// Noise.
 		{"abort", jsC("/search", "AbortError", "signal is aborted without reason"), "noise.aborted", []string{"AbortError"}},
 		{"resize observer", jsC("/", "Error", "ResizeObserver loop completed with undelivered notifications."), "noise.resize_observer", []string{"requestAnimationFrame"}},

@@ -46,6 +46,27 @@
   {{end}}
 </div>
 
+<h2>Time to set up</h2>
+<p class="muted small">Apps added in the last 30 days ({{.Data.SetupApps}}): how long each step took from adding the app. Shorter is better; this is what changes when setup gets easier.</p>
+{{if .Data.SetupApps}}
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>Step</th><th class="num">Apps there</th><th class="num">Median time</th><th class="num">Within an hour</th><th class="num">Within a day</th></tr></thead>
+    <tbody>
+    {{range .Data.SetupSteps}}
+      <tr><td>{{.Label}}</td><td class="num">{{.Reached}} <span class="muted small">of {{.Of}}</span></td><td class="num">{{.Median}}</td>
+        <td class="num"><span class="funnel-bar" style="display:inline-block;width:4rem;vertical-align:middle"><span style="width: {{.WithinHourPct}}%"></span></span> {{.WithinHour}}</td><td class="num">{{.WithinDay}}</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{with .Data.Nudges}}
+<p class="muted small">Setup reminders: {{.InstallSent}} "finish setup" emails sent, {{.InstallThenConnected}} of those apps connected afterwards · {{.TestSent}} "send a test error" emails, {{.TestThenIssue}} saw an issue afterwards.</p>
+{{end}}
+{{else}}
+<p class="muted">No apps added in the last 30 days.</p>
+{{end}}
+
 <h2>Newest accounts</h2>
 <div class="card table-wrap">
   <table>
@@ -61,7 +82,7 @@
 </div>
 
 <h2>Biggest open issues across all apps</h2>
-<p class="muted small">Ranked by impact (people affected, key pages). Open one to see it as the owner does, read-only.</p>
+<p class="muted small">Ranked by impact (people affected, key pages). Open one to see it as the owner does (you have full access).</p>
 <div class="card table-wrap">
   <table>
     <thead><tr><th>Issue</th><th>App · account</th><th class="num">Events</th><th class="num">People</th><th class="num">Last seen</th></tr></thead>

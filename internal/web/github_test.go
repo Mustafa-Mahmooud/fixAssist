@@ -106,6 +106,24 @@ func TestGitHubConnectAndCodeContext(t *testing.T) {
 	u2, _ := url.Parse(srv.URL)
 	c.Jar.SetCookies(u2, c.Jar.Cookies(u))
 
+	// After the first visit, the live setup box offers to connect the code.
+	statusBox := func() string {
+		resp, _ := c.Get(fmt.Sprintf("%s/projects/%d/setup/status", srv.URL, p.ID))
+		return body(t, resp)
+	}
+	if strings.Contains(statusBox(), "make fixes point to the exact file") {
+		t.Error("GitHub offered before the first visit")
+	}
+	if err := ensurePartition(f.pool); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(ctx, "insert into pageviews (project_id, route, session_id) values ($1, '/', 's')", p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if b := statusBox(); !strings.Contains(b, "make fixes point to the exact file") || !strings.Contains(b, "/github/connect") {
+		t.Errorf("no GitHub offer after the first visit: %s", b)
+	}
+
 	// Connect: we're sent to GitHub's install page with a signed state.
 	noRedirect := *c
 	noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }

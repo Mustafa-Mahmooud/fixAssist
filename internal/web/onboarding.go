@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yourname/fixassist/internal/grouping"
+	"github.com/yourname/fixassist/internal/normalize"
 	"github.com/yourname/fixassist/internal/store/db"
 )
 
@@ -26,6 +28,7 @@ type Step struct {
 	Title, Text, Code string
 	Link, LinkText    string
 	Done, Optional    bool
+	External          bool // Link opens the founder's own site in a new tab
 }
 
 // Onboarding is a project's checklist.
@@ -37,8 +40,23 @@ type Onboarding struct {
 	ShowOptionals bool
 }
 
-// testErrorJS is what a founder runs in the browser console to see an issue.
-const testErrorJS = `setTimeout(() => { throw new Error("Fix Assistant test") })`
+// testErrorJS is what a founder runs in the browser console to see an issue
+// when there is no address to open with ?fixassist-test.
+const testErrorJS = `setTimeout(() => { throw new Error("` + normalize.TestErrorMessage + `") })`
+
+// seeFirstIssue is the checklist step that sends a test error: a link that
+// opens the live site with ?fixassist-test, or the console line without one.
+func seeFirstIssue(base string, domains []string, done bool) Step {
+	s := Step{Title: "See your first issue", Done: done}
+	if u := testURL(domains); u != "" {
+		s.Text = "Problems show up on their own as visitors use your app. To see one right away, send a test error: it opens your site and reports one harmless error, explained on the Issues page a few seconds later."
+		s.Link, s.LinkText, s.External = u, "Send a test error", true
+		return s
+	}
+	s.Text = "Problems show up here on their own as visitors use your app. To see one right away, open your live site, press F12, choose Console, and run:"
+	s.Code, s.Link, s.LinkText = testErrorJS, base+"/issues", "Open Issues"
+	return s
+}
 
 func (a *App) onboarding(ctx context.Context, p db.GetOrgProjectRow) *Onboarding {
 	st, err := db.New(a.Pool).ProjectOnboarding(ctx, p.ID)
@@ -57,17 +75,15 @@ func (a *App) onboarding(ctx context.Context, p db.GetOrgProjectRow) *Onboarding
 	o := &Onboarding{ProjectID: p.ID, Steps: []Step{
 		{Title: "Add your app", Text: "Done. Fix Assistant knows which builder and backend you use, so its explanations and fix messages fit your app.", Done: true},
 		{Title: "Install the snippet", Done: st.Connected, Link: base + "/setup", LinkText: "Go to Setup",
-			Text: fmt.Sprintf("Copy the install message from Setup, paste it into %s, publish your app, then open your live site once. This step ticks itself when the first visit arrives.", agentName(p.TargetAgent))},
-		{Title: "See your first issue", Done: st.HasIssue, Link: base + "/issues", LinkText: "Open Issues",
-			Text: "Problems show up here on their own as visitors use your app. To see one right away, open your live site, press F12, choose Console, and run:",
-			Code: testErrorJS},
+			Text: fmt.Sprintf("Copy the install message from Setup, paste it into %s, publish your app, then open your live site once. This step ticks itself when the first visit arrives. Nothing yet? Check my site on Setup tells you what's wrong.", agentName(p.TargetAgent))},
+		seeFirstIssue(base, p.AllowedDomains, st.HasIssue),
 		{Title: "Read the explanation and copy the fix", Done: st.Explained, Link: issueLink, LinkText: issueText,
-			Text: "An issue says what broke, who is affected and why, with a fix message to paste into your AI builder. Issues are explained once 2 people or 3 visits hit them; click Explain now to see it sooner. After publishing the fix, click I applied the fix and Fix Assistant checks that the error stopped."},
+			Text: fmt.Sprintf("An issue says what broke, who is affected and why, with a fix message to paste into your AI builder. Your first %d issues are explained right away; later ones once 2 people or 3 visits hit them (or click Explain now). After publishing the fix, click I applied the fix and Fix Assistant checks that the error stopped.", grouping.EarlyExplainIssues)},
 		{Title: "Catch errors from your server too", Optional: true, Done: st.ServerErrors, Link: base + "/setup#server-errors", LinkText: "Set up server errors",
 			Text: "If your app has its own backend (Node.js, Python, .NET, PHP, ...), errors there, like a failed save to the database, need a small package on the server."},
 	}}
 	if a.GitHub != nil {
-		o.Steps = append(o.Steps, Step{Title: "Connect your code", Optional: true, Done: st.CodeConnected, Link: base + "/setup", LinkText: "Connect GitHub",
+		o.Steps = append(o.Steps, Step{Title: "Connect your code", Optional: true, Done: st.CodeConnected, Link: base + "/setup#code", LinkText: "Connect GitHub",
 			Text: "With your GitHub repository connected (read-only), fix messages point to the exact file and line."})
 	}
 	o.Steps = append(o.Steps, Step{Title: "Let your AI agent fix issues by itself", Optional: true, Done: st.AgentConnected, Link: base + "/setup#agent-loop", LinkText: "Connect an agent",

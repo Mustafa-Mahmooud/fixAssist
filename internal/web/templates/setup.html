@@ -11,6 +11,9 @@
       <button type="button" class="big" data-copy="#install-prompt" data-copied="Copied! Paste it into {{$agent}}, then publish your app."><i class="ico ico-copy"></i><span class="label">Copy install message</span></button>
     </div>
   </div>
+  <ol class="builder-steps small">
+    {{range .Data.BuilderSteps}}<li>{{.}}</li>{{end}}
+  </ol>
   <details style="margin-top:.75rem">
     <summary>Or add the script tag yourself</summary>
     <p class="muted small">Put it inside <code>&lt;head&gt;</code>, before any other script.</p>
@@ -22,18 +25,31 @@
   <p class="muted small">Tell your visitors you use Fix Assistant: our <a href="/privacy#for-customers">privacy policy</a> has a paragraph you can copy into yours.</p>
 </section>
 
-<section class="card step-card">
+<section class="card step-card" id="install-status">
   <span class="step-num" aria-hidden="true">2</span>
   <h2>Open your app</h2>
-  <p class="muted">Visit any page of the published app. The first event shows up here as soon as it arrives.</p>
+  {{with .Data.Allowed}}<p class="flash good small">Allowed <code>{{.}}</code>. Visits from it count within 30 seconds.</p>{{end}}
+  {{with .Data.Project.AllowedDomains}}
+  <p class="muted">Once {{$agent}} has published the change, open <a href="https://{{index . 0}}/" target="_blank" rel="noopener">{{index . 0}}</a>. The first visit shows up here within a few seconds.</p>
+  <form hx-post="/projects/{{$.Data.Project.ID}}/setup/check" hx-target="#site-check" hx-swap="outerHTML" class="row">
+    <input type="hidden" name="csrf" value="{{$.Session.CSRF}}">
+    <button type="submit" class="secondary" data-busy="Checking your site…">Check my site</button>
+    <span class="muted small">Not showing up? We'll open your site and tell you what's wrong.</span>
+  </form>
+  <div id="site-check"></div>
+  <p class="muted small">Your app's {{if eq (len .) 1}}address{{else}}addresses{{end}}: {{range $i, $d := .}}{{if $i}}, {{end}}<code>{{$d}}</code>{{end}}. Visits from other sites are refused.</p>
+  {{else}}
+  <p class="muted">Visit any page of the published app. The first visit shows up here as soon as it arrives.</p>
+  {{end}}
   {{template "setup_status" .Data.Status}}
 </section>
 
 <h2>Optional extras</h2>
 <p class="muted small" style="margin-top:-.25rem">Not needed to get started. Come back to these whenever you like.</p>
 
+<div data-tabs>
 {{with .Data.GitHub}}{{if .Enabled}}
-<section class="card">
+<section class="card" id="code" data-tab="Your code">
   <h2>Connect your code <span class="muted small">(optional)</span></h2>
   {{if .Repo}}
     <p class="status-line"><span class="dot ok"></span><span>Connected to <code>{{.Repo}}</code>. Fix prompts now point to the exact file and line.</span></p>
@@ -52,7 +68,7 @@
 </section>
 {{end}}{{end}}
 
-<section class="card" id="server-errors">
+<section class="card" id="server-errors" data-tab="Server errors">
   <h2>Catch server errors too <span class="muted small">(optional)</span></h2>
   <p class="muted">The script above sees problems in your visitors' browsers. If your app also has its own server code (a backend in Node.js, Python, .NET, PHP, Ruby, Java, Go or another language), errors there, such as a database refusing to save, only show up if the server reports them. Paste this into your AI agent, or send it to whoever builds your backend:</p>
   <div class="copy-wrap">
@@ -84,10 +100,25 @@
   {{end}}
 </section>
 
-<section class="card" id="agent-loop">
+<section class="card" id="agent-loop" data-tab="AI agent">
   <h2>Let your AI agent fix issues in a loop <span class="muted small">(optional)</span></h2>
   <p class="muted">Coding agents that support MCP (Claude Code, Cursor, VS Code, Windsurf) can connect to Fix Assistant directly. They read an issue, make the fix, report it after deploying, and ask Fix Assistant whether the error stopped. If it came back, they get the new evidence and try again, up to {{.Data.MaxAttempts}} times, then hand over to you.</p>
-  {{if .Data.NewToken}}
+  {{if and .Data.NewToken .Data.TokenFor}}
+    <div class="notice">
+      {{with .Data.Deeplink}}
+      <p><b>One more click.</b> This opens {{.Name}} and asks you to add Fix Assistant. Click Install (or Add) there.</p>
+      <p><a class="button big" href="{{.URL}}">Add Fix Assistant to {{.Name}} <i class="ico ico-arrow"></i></a></p>
+      <p class="muted small" style="margin-bottom:0">Nothing happened? {{.Name}} may not be installed, or your browser blocked the link: use the manual setup for {{.Name}} below instead.</p>
+      {{else}}
+      <p><b>Paste this into your terminal, in your app's code folder.</b> It connects Claude Code to Fix Assistant.</p>
+      <div class="copy-wrap">
+        <pre id="agent-oneclick">{{(index .Data.AgentSetups 0).Code}}</pre>
+        <button type="button" class="secondary" data-copy="#agent-oneclick" data-copied="Copied! Paste it into your terminal."><span class="label">Copy</span></button>
+      </div>
+      {{end}}
+      <p class="muted small">Then ask your agent the message at the bottom of this card. This link contains a password for your app: don't share it.</p>
+    </div>
+  {{else if .Data.NewToken}}
     <div class="notice">
       <p><b>Your new agent token.</b> Copy it now: it won't be shown again. Treat it like a password and don't commit it to your repository.</p>
       <div class="copy-wrap">
@@ -96,7 +127,17 @@
       </div>
     </div>
   {{end}}
-  <form method="post" action="/projects/{{.Data.Project.ID}}/agent-tokens" class="row">
+  <p style="margin-bottom:.4rem"><b>Connect in one click</b></p>
+  <div class="row" style="gap:.5rem">
+    {{range .Data.AgentTools}}
+    <form method="post" action="/projects/{{$.Data.Project.ID}}/agent-tokens#agent-loop">
+      <input type="hidden" name="csrf" value="{{$.Session.CSRF}}"><input type="hidden" name="for" value="{{.ID}}">
+      <button type="submit" class="secondary" data-busy="Connecting…">Connect {{.Name}}</button>
+    </form>
+    {{end}}
+  </div>
+  <p class="muted small">Another tool (Windsurf, your own scripts)? Create a token, then use its setup below.</p>
+  <form method="post" action="/projects/{{.Data.Project.ID}}/agent-tokens#agent-loop" class="row">
     <input type="hidden" name="csrf" value="{{.Session.CSRF}}">
     <label for="token-name" style="margin:0">Name</label>
     <input id="token-name" name="name" placeholder="e.g. Cursor on my laptop" maxlength="60" style="width:auto;flex:1 1 14rem">
@@ -133,12 +174,36 @@
 </section>
 
 {{with .Data.Autofix}}
-<section class="card" id="autofix">
+<section class="card" id="autofix" data-tab="Auto-fix">
   <h2>Auto-fix high-impact issues <span class="muted small">(optional, Claude Code)</span></h2>
   <p class="muted">When a high-impact issue comes in, Fix Assistant emails you an <b>Auto-fix this</b> button. Once you approve, a small program on your computer runs Claude Code on the fix in a separate branch (your own checkout is never touched), opens a pull request, and turns on auto-merge, so it merges once your checks pass. After the merge, Fix Assistant watches for the error on the new version as usual and tries again, up to {{$.Data.MaxAttempts}} times, if it comes back.</p>
-  <p class="muted small">You need <a href="https://docs.anthropic.com/en/docs/claude-code" rel="noopener">Claude Code</a>, git and the <a href="https://cli.github.com" rel="noopener">GitHub CLI</a> (<code>gh auth login</code>) on that computer. Your code stays on your computer. At most one fix runs at a time, and at most {{.DailyCap}} a day.</p>
+  <p class="muted small">You need <a href="https://docs.anthropic.com/en/docs/claude-code" rel="noopener">Claude Code</a>, git and the <a href="https://cli.github.com" rel="noopener">GitHub CLI</a> (<code>gh auth login</code>) on that computer. Your code stays on your computer. One fix runs at a time.</p>
 
-  <p class="muted small"><b>1.</b> Install <b>fixassist</b>, the small helper that does the fixing, on the computer that has your app's code. On Windows, paste this into PowerShell:</p>
+  <p class="muted small"><b>1.</b> Connect the computer that has your app's code. One command installs <b>fixassist</b> (the small helper that does the fixing), connects your code folder to this app and keeps it running in the background.</p>
+  {{if $.Data.PairCode}}
+  <div class="notice">
+    <p>Open a terminal <b>in your app's code folder</b> (the one you cloned from GitHub) and paste the line for your computer. It works once, in the next 15 minutes.</p>
+    <p class="muted small" style="margin-bottom:.25rem">Windows (PowerShell):</p>
+    <div class="copy-wrap">
+      <pre id="autofix-pair-win">irm "{{$.Data.ServerURL}}/install/fixassist.ps1?pair={{$.Data.PairCode}}" | iex</pre>
+      <button type="button" class="secondary" data-copy="#autofix-pair-win" data-copied="Copied! Paste it into PowerShell in your code folder."><span class="label">Copy</span></button>
+    </div>
+    <p class="muted small" style="margin-bottom:.25rem">Mac or Linux (Terminal):</p>
+    <div class="copy-wrap">
+      <pre id="autofix-pair-unix">curl -fsSL "{{$.Data.ServerURL}}/install/fixassist.sh?pair={{$.Data.PairCode}}" | sh</pre>
+      <button type="button" class="secondary" data-copy="#autofix-pair-unix" data-copied="Copied! Paste it into Terminal in your code folder."><span class="label">Copy</span></button>
+    </div>
+    <p class="muted small" style="margin-bottom:0">It checks for Claude Code, git and the GitHub CLI and tells you what's missing. When it finishes, refresh this page: your computer shows up under "Connected computers".</p>
+  </div>
+  {{else}}
+  <form method="post" action="/projects/{{$.Data.Project.ID}}/autofix/pair#autofix">
+    <input type="hidden" name="csrf" value="{{$.Session.CSRF}}">
+    <button type="submit" data-busy="Getting your command…">Get my install command</button>
+  </form>
+  {{end}}
+  <details>
+    <summary class="small">Or set it up by hand</summary>
+  <p class="muted small">Install <b>fixassist</b>. On Windows, paste this into PowerShell:</p>
   <div class="copy-wrap">
     <pre id="autofix-install-win">irm {{$.Data.ServerURL}}/install/fixassist.ps1 | iex</pre>
     <button type="button" class="secondary" data-copy="#autofix-install-win"><span class="label">Copy</span></button>
@@ -153,15 +218,16 @@
     {{range .Downloads}}<a class="button secondary" href="/download/fixassist/{{.File}}" download><i class="ico ico-download"></i>{{.Label}}</a>{{end}}
   </p>
 
-  <p class="muted small"><b>2.</b> Create an agent token above, then connect fixassist to this app's code and start it:</p>
+  <p class="muted small">Create an agent token above, then connect fixassist to this app's code and start it:</p>
   <div class="copy-wrap">
     <pre id="autofix-setup">fixassist add --server {{$.Data.ServerURL}} --token {{if $.Data.NewToken}}{{$.Data.NewToken}}{{else}}&lt;your agent token&gt;{{end}} --repo /path/to/your/app
 fixassist install</pre>
     <button type="button" class="secondary" data-copy="#autofix-setup"><span class="label">Copy</span></button>
   </div>
   <p class="muted small"><code>fixassist install</code> keeps it running in the background with no window: it starts by itself when you log in and restarts if it stops. <code>fixassist status</code> shows what it's doing; <code>fixassist uninstall</code> stops it.</p>
+  </details>
 
-  <p class="muted small"><b>3.</b> Connected computers:</p>
+  <p class="muted small"><b>2.</b> Connected computers:</p>
   {{if .Daemons}}
   <div class="table-wrap">
     <table>
@@ -174,10 +240,10 @@ fixassist install</pre>
     </table>
   </div>
   {{else}}
-  <p class="muted small">No daemon has connected yet. Run <code>fixassist install</code>; it shows up here within a few seconds.</p>
+  <p class="muted small">No computer connected yet. Run the command above in your code folder, then refresh this page.</p>
   {{end}}
 
-  <p class="muted small"><b>4.</b> Turn it on:</p>
+  <p class="muted small"><b>3.</b> Turn it on:</p>
   <form method="post" action="/projects/{{$.Data.Project.ID}}/autofix">
     <input type="hidden" name="csrf" value="{{$.Session.CSRF}}">
     <p><label style="margin:0"><input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}} {{if and (not .Enabled) (not .Daemons)}}disabled{{end}}> Auto-fix high-impact issues in this app</label></p>
@@ -207,7 +273,7 @@ fixassist install</pre>
 </section>
 {{end}}
 
-<section class="card" id="training">
+<section class="card" id="training" data-tab="Improve suggestions">
   <h2>Help improve fix suggestions</h2>
   <p class="muted">Fix Assistant trains its own AI model (it runs on our servers, not another company's) on errors and on whether their fixes worked, so new kinds of errors get better suggestions. Before anything is kept for this, personal details, IP addresses, keys and other secrets are removed. See the <a href="/privacy#training">privacy policy</a>.</p>
   <form method="post" action="/projects/{{.Data.Project.ID}}/training" class="row">
@@ -217,4 +283,5 @@ fixassist install</pre>
   </form>
   <p class="muted small">Turning this off also deletes what was already kept from this project.</p>
 </section>
+</div>
 {{end}}

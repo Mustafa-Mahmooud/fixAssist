@@ -42,8 +42,12 @@ type Notifier struct {
 	// AutofixLink, if set, is the signed "Auto-fix this" link in auto-fix
 	// approval emails (set by cmd/app to web.AutofixLink).
 	AutofixLink func(runID int64) string
-	Log         *slog.Logger
-	Now         func() time.Time
+	// IngestBase is where the snippet loads from, for setup reminders' site
+	// check; SiteCheck replaces that check in tests.
+	IngestBase string
+	SiteCheck  SetupChecker
+	Log        *slog.Logger
+	Now        func() time.Time
 }
 
 func (n *Notifier) now() time.Time {
@@ -99,6 +103,11 @@ func (n *Notifier) CheckInstant(ctx context.Context, issueID int64) (InstantResu
 	}
 	if err != nil {
 		return "", err
+	}
+	// The setup test error is sent on purpose (and anyone can open a site
+	// with ?fixassist-test): never email about it.
+	if s.CatalogKey.String == "setup.test_error" {
+		return SkipLowImpact, nil
 	}
 	impact, _ := is.ImpactScore.Float64Value()
 	regressed := is.Status == "open" && is.RegressionCount > 0

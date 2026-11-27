@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/yourname/fixassist/internal/agentapi"
 )
 
 // Downloads serves the auto-fix daemon (cmd/fixassist), built for each
@@ -74,9 +76,9 @@ func (d *Downloads) binary(w http.ResponseWriter, r *http.Request) {
 func (d *Downloads) script(body, contentType string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", contentType)
-		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		_, _ = w.Write([]byte(strings.ReplaceAll(body, "{{BASE}}", strings.TrimRight(d.BaseURL, "/"))))
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write([]byte(renderScript(body, d.BaseURL, r.URL.Query().Get("pair"))))
 	}
 }
 
@@ -106,7 +108,14 @@ if ($installed) { try { schtasks /Run /TN FixAssist 2>$null | Out-Null } catch {
 Write-Host ''
 & $exe version
 Write-Host "Installed to $exe"
-Write-Host 'Next, copy the "fixassist add" command from the Setup page, then run: fixassist install'
+$pair = '{{PAIR}}'
+if ($pair) {
+  Write-Host ''
+  & $exe pair --server '{{BASE}}' --code $pair --repo (Get-Location).Path
+  if ($LASTEXITCODE -eq 0) { & $exe install }
+} else {
+  Write-Host 'Next, copy the install command from the Setup page and run it in your app''s code folder.'
+}
 `
 
 // installSH puts fixassist in ~/.local/bin (or $FIXASSIST_DIR).
@@ -134,5 +143,26 @@ case ":$PATH:" in
   *":$dir:"*) ;;
   *) echo "Add it to your PATH first:  echo 'export PATH=\"$dir:\$PATH\"' >> ~/.profile && . ~/.profile" ;;
 esac
-echo 'Next, copy the "fixassist add" command from the Setup page, then run: fixassist install'
+pair='{{PAIR}}'
+if [ -n "$pair" ]; then
+  echo
+  if "$dir/fixassist" pair --server '{{BASE}}' --code "$pair" --repo "$PWD"; then
+    "$dir/fixassist" install
+  fi
+else
+  echo 'Next, copy the install command from the Setup page and run it in your app'"'"'s code folder.'
+fi
 `
+
+// renderScript fills in the server's URL and, with ?pair=, the one-time
+// code: the script then connects the current folder and starts the watcher.
+// Only the code's own characters get into the script.
+func renderScript(body, base, pair string) string {
+	code := agentapi.NormalizePairCode(pair)
+	if len(code) == 10 {
+		code = code[:5] + "-" + code[5:]
+	} else {
+		code = ""
+	}
+	return strings.NewReplacer("{{BASE}}", strings.TrimRight(base, "/"), "{{PAIR}}", code).Replace(body)
+}

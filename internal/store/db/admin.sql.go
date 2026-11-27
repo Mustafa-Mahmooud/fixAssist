@@ -31,7 +31,7 @@ type AdminGetProjectRow struct {
 	OrgName        string
 }
 
-// Staff read-only view of any org's project (same columns as GetOrgProject).
+// Admin access to any org's project (same columns as GetOrgProject).
 func (q *Queries) AdminGetProject(ctx context.Context, id int64) (AdminGetProjectRow, error) {
 	row := q.db.QueryRow(ctx, adminGetProject, id)
 	var i AdminGetProjectRow

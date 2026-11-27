@@ -58,6 +58,11 @@ type Handler struct {
 	Model ai.LLM          // optional: our model for errors outside the catalog
 	Log   *slog.Logger
 	Now   func() time.Time
+	// ClientIP finds the caller behind a proxy (analytics.Enricher.ClientIP,
+	// which honours TRUST_PROXY); nil means the connection's address.
+	ClientIP func(*http.Request) string
+
+	pairs pairLimiter
 }
 
 func (h *Handler) now() time.Time {
@@ -78,6 +83,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /agent/v1/issues/{id}/fix", h.restReport)
 	mux.HandleFunc("GET /agent/v1/issues/{id}/check", h.restCheck)
 	// Auto-fix daemon (cmd/fixassist).
+	mux.HandleFunc("POST /agent/v1/pair", h.restPair)
 	mux.HandleFunc("POST /agent/v1/autofix/claim", h.restClaim)
 	mux.HandleFunc("GET /agent/v1/autofix/prs", h.restPRs)
 	mux.HandleFunc("POST /agent/v1/autofix/runs/{id}", h.restRunEvent)

@@ -23,11 +23,11 @@
     </li>
   </ol>
 
-  <p class="small muted"><b>You'll need:</b> your app published online, and access to the tool you built it with. It takes about five minutes.</p>
+  <p class="small muted"><b>You'll need:</b> your app published online (you'll paste its address), and access to the tool you built it with. It takes about five minutes, and you can send a test error at the end to see it work.</p>
 
   {{if .Error}}<p class="flash error">{{.Error}}</p>{{end}}
   <h2>Add your first app</h2>
   {{template "new_project_form" .}}
-  <p class="small muted">Next you'll see the install steps, and a "Getting started" list that ticks itself as you go.</p>
+  <p class="small muted">Next you'll get one message to paste into your builder, and a "Getting started" list that ticks itself as you go. Stuck? The Setup page can check your site and tell you what's wrong.</p>
 </div>
 {{end}}

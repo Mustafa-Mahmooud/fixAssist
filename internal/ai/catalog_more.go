@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/yourname/fixassist/internal/normalize"
 )
 
 // The extended catalog: the failures that most often break apps built with
@@ -226,6 +228,20 @@ var (
 )
 
 var catalogFirst = []entry{
+	// The error a founder sends on purpose from Setup (?fixassist-test or the
+	// console line): low severity, so it never alerts or starts an auto-fix.
+	mk("setup.test_error", nil, func(c *Context) bool {
+		j := c.js()
+		return j != nil && normalize.IsTestError(j.Type, j.Message)
+	}, func(c *Context, line string) spec {
+		return spec{sev: "low", conf: 1,
+			title: "Your test error arrived: Fix Assistant is set up",
+			what:  fmt.Sprintf("This is the test error you sent on purpose from %s. It shows that Fix Assistant is installed and receiving errors from your live app. Nothing is broken.", c.page()),
+			why:   "It was sent by opening your app with ?fixassist-test at the end of the address (or by running the test line in the browser console).",
+			fix:   "Nothing to fix: this error was sent on purpose to test error monitoring. Don't change any code.",
+			check: "Real problems will show up on the Issues page the same way, each with an explanation and a fix message. You can mark this one as ignored."}
+	}),
+
 	// Noise: errors that look alarming but usually aren't bugs.
 	mk("auth.refresh_token", reRefreshToken, nil, func(c *Context, line string) spec {
 		return spec{sev: "medium", conf: 0.75,

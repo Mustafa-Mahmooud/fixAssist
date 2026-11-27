@@ -40,10 +40,13 @@ type App struct {
 	Metrics    *obs.Metrics // optional, for the admin page
 	GitHub     *github.App  // optional: code context (Phase 7)
 	Code       ai.CodeSearcher
-	Model      ai.LLM // optional: our model for errors outside the catalog
-	GitHubWeb  string // overrides https://github.com (tests)
-	GitHubAPI  string // overrides https://api.github.com (tests)
+	Model      ai.LLM       // optional: our model for errors outside the catalog
+	GitHubWeb  string       // overrides https://github.com (tests)
+	GitHubAPI  string       // overrides https://api.github.com (tests)
+	SiteClient *http.Client // overrides the "Check my site" client (tests)
 	Log        *slog.Logger
+
+	siteChecks projectThrottle
 }
 
 type ctxKey struct{}
@@ -69,6 +72,8 @@ func (a *App) Register(mux *http.ServeMux) {
 	mux.Handle("POST /projects", a.signedIn(a.createProject))
 	mux.Handle("GET /projects/{id}/setup", a.signedIn(a.setupPage))
 	mux.Handle("GET /projects/{id}/setup/status", a.signedIn(a.setupStatus))
+	mux.Handle("POST /projects/{id}/setup/check", a.signedIn(a.siteCheck))
+	mux.Handle("POST /projects/{id}/domains", a.signedIn(a.allowDomain))
 	mux.Handle("POST /projects/{id}/agent-tokens", a.signedIn(a.createAgentToken))
 	mux.Handle("POST /projects/{id}/onboarding/dismiss", a.signedIn(a.dismissOnboarding))
 	mux.Handle("POST /settings/tips", a.signedIn(a.setTips))
@@ -106,6 +111,7 @@ func (a *App) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /f/{sid}/{outcome}", a.feedbackLinkPage)
 	mux.HandleFunc("POST /f/{sid}/{outcome}", a.feedbackLinkSubmit)
 	mux.Handle("POST /projects/{id}/autofix", a.signedIn(a.setAutofix))
+	mux.Handle("POST /projects/{id}/autofix/pair", a.signedIn(a.autofixPair))
 	mux.Handle("POST /projects/{id}/issues/{issue}/autofix", a.signedIn(a.startAutofix))
 	mux.Handle("POST /projects/{id}/autofix/{run}/reject", a.signedIn(a.rejectAutofix))
 	mux.Handle("POST /projects/{id}/autofix/{run}/merge", a.signedIn(a.approveAutofixMerge))
@@ -253,20 +259,44 @@ func (a *App) renderProjects(w http.ResponseWriter, r *http.Request, status int,
 		name, title = "welcome", "Welcome" // first visit: what this is, then the first app
 	}
 	a.render(w, status, name, page{Title: title, Session: s, Error: errMsg, Data: map[string]any{
-		"Projects": list, "Agents": projects.Agents,
+		"Projects": list, "Agents": projects.Agents, "Form": r.PostForm,
 	}})
 }
 
 func (a *App) createProject(w http.ResponseWriter, r *http.Request) {
 	s := sessionFrom(r)
-	name := strings.TrimSpace(r.PostFormValue("name"))
-	if name == "" || len(name) > 80 {
-		a.renderProjects(w, r, 400, "Give your app a name (up to 80 characters).")
+	// The form asks for the app's address and builder only: the name comes
+	// from the address unless given, and the backend is detected from the
+	// app's requests. "domains" (a list) is the older form's field.
+	var domains []string
+	if addr := r.PostFormValue("address"); addr != "" {
+		host, problem := parseAppAddress(addr)
+		if problem != "" {
+			a.renderProjects(w, r, 400, problem)
+			return
+		}
+		domains = append(domains, host)
+	}
+	for _, d := range strings.FieldsFunc(r.PostFormValue("domains"), func(c rune) bool { return c == ',' || c == ' ' }) {
+		host, problem := parseAppAddress(d)
+		if problem != "" {
+			a.renderProjects(w, r, 400, problem)
+			return
+		}
+		domains = append(domains, host)
+	}
+	if len(domains) == 0 {
+		_, problem := parseAppAddress("")
+		a.renderProjects(w, r, 400, problem)
 		return
 	}
-	var domains []string
-	for _, d := range strings.FieldsFunc(r.PostFormValue("domains"), func(c rune) bool { return c == ',' || c == ' ' }) {
-		domains = append(domains, d)
+	name := strings.TrimSpace(r.PostFormValue("name"))
+	if name == "" {
+		name = nameFromHost(domains[0])
+	}
+	if len(name) > 80 {
+		a.renderProjects(w, r, 400, "Give your app a shorter name (up to 80 characters).")
+		return
 	}
 	p, err := a.Projects.Create(r.Context(), projects.CreateParams{
 		OrgID: s.OrgID, Name: name, Agent: r.PostFormValue("agent"), Backend: r.PostFormValue("backend"), AllowedDomains: domains,
@@ -278,26 +308,14 @@ func (a *App) createProject(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/projects/"+strconv.FormatInt(p.ID, 10)+"/setup", http.StatusSeeOther)
 }
 
-// project loads a project of the signed-in user's org, or writes 404.
+// project loads a project the signed-in user may work on, or writes 404.
 func (a *App) project(w http.ResponseWriter, r *http.Request) (db.GetOrgProjectRow, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.NotFound(w, r)
 		return db.GetOrgProjectRow{}, false
 	}
-	s := sessionFrom(r)
-	p, err := db.New(a.Pool).GetOrgProject(r.Context(), db.GetOrgProjectParams{ID: id, OrgID: s.OrgID})
-	// Staff can look at any account's project, read-only: only GETs get
-	// past the org check, so every POST still needs the project's own org.
-	if errors.Is(err, pgx.ErrNoRows) && s.Staff && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
-		var sp db.AdminGetProjectRow
-		sp, err = db.New(a.Pool).AdminGetProject(r.Context(), id)
-		if err == nil {
-			p = db.GetOrgProjectRow{ID: sp.ID, Name: sp.Name, TargetAgent: sp.TargetAgent, Backend: sp.Backend,
-				AllowedDomains: sp.AllowedDomains, KeyPages: sp.KeyPages, PublicKey: sp.PublicKey}
-			s.StaffView = sp.OrgName
-		}
-	}
+	p, err := a.accessProject(r.Context(), sessionFrom(r), id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
 		return p, false
@@ -309,6 +327,25 @@ func (a *App) project(w http.ResponseWriter, r *http.Request) (db.GetOrgProjectR
 	return p, true
 }
 
+// accessProject is the one access rule for projects. A normal user gets
+// full control of their own org's projects and nothing else; an admin
+// (s.Staff) gets full control of every project, and s.StaffView then names
+// the other account so the page says whose app it is. pgx.ErrNoRows means
+// no access.
+func (a *App) accessProject(ctx context.Context, s *auth.Session, id int64) (db.GetOrgProjectRow, error) {
+	p, err := db.New(a.Pool).GetOrgProject(ctx, db.GetOrgProjectParams{ID: id, OrgID: s.OrgID})
+	if !errors.Is(err, pgx.ErrNoRows) || !s.Staff {
+		return p, err
+	}
+	sp, err := db.New(a.Pool).AdminGetProject(ctx, id)
+	if err != nil {
+		return p, err
+	}
+	s.StaffView = sp.OrgName
+	return db.GetOrgProjectRow{ID: sp.ID, Name: sp.Name, TargetAgent: sp.TargetAgent, Backend: sp.Backend,
+		AllowedDomains: sp.AllowedDomains, KeyPages: sp.KeyPages, PublicKey: sp.PublicKey}, nil
+}
+
 func (a *App) fail(w http.ResponseWriter, err error) {
 	a.Log.Error("dashboard", "err", err)
 	http.Error(w, "internal error", http.StatusInternalServerError)
@@ -318,17 +355,26 @@ func (a *App) fail(w http.ResponseWriter, err error) {
 
 type setupStatus struct {
 	ProjectID    int64
+	CSRF         string
 	Events       int64 // errors from the browser and the server
 	ServerEvents int64
 	PageViews    int64
 	Connected    bool
 	LastEventAt  time.Time
+	FirstIssueID int64          // 0 until the first issue
+	TestURL      string         // opens the site with ?fixassist-test
+	Rejected     []RejectedSite // addresses whose visits were refused
+	OfferGitHub  bool           // connected, GitHub App on, no repository yet
 }
 
-func (a *App) status(ctx context.Context, projectID int64) (setupStatus, error) {
-	st, err := db.New(a.Pool).ProjectEventStats(ctx, projectID)
-	return setupStatus{ProjectID: projectID, Events: st.Events, ServerEvents: st.ServerEvents, PageViews: st.PageViews,
-		Connected: st.Events+st.PageViews > 0, LastEventAt: st.LastEventAt.Time}, err
+func (a *App) status(r *http.Request, p db.GetOrgProjectRow) (setupStatus, error) {
+	st, err := db.New(a.Pool).ProjectEventStats(r.Context(), p.ID)
+	if err != nil {
+		return setupStatus{}, err
+	}
+	out := setupStatus{ProjectID: p.ID, CSRF: sessionFrom(r).CSRF, Events: st.Events, ServerEvents: st.ServerEvents, PageViews: st.PageViews,
+		Connected: st.Events+st.PageViews > 0, LastEventAt: st.LastEventAt.Time}
+	return out, a.setupExtras(r.Context(), p, &out)
 }
 
 func (a *App) setupPage(w http.ResponseWriter, r *http.Request) {
@@ -336,13 +382,21 @@ func (a *App) setupPage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	a.renderSetup(w, r, p, "")
+	a.renderSetup(w, r, p, setupOnce{})
 }
 
-// renderSetup renders the Setup page; newToken is an agent token to show
-// once, right after it was created.
-func (a *App) renderSetup(w http.ResponseWriter, r *http.Request, p db.GetOrgProjectRow, newToken string) {
-	st, err := a.status(r.Context(), p.ID)
+// setupOnce is what the Setup page shows once, right after it was made: a
+// new agent token, or a pairing code for the auto-fix install command.
+type setupOnce struct {
+	Token    string
+	PairCode string
+	For      string // which button made the token: "cursor", "vscode", ...
+}
+
+// renderSetup renders the Setup page.
+func (a *App) renderSetup(w http.ResponseWriter, r *http.Request, p db.GetOrgProjectRow, once setupOnce) {
+	newToken := once.Token
+	st, err := a.status(r, p)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -370,6 +424,9 @@ func (a *App) renderSetup(w http.ResponseWriter, r *http.Request, p db.GetOrgPro
 	}
 	a.render(w, 200, "setup", page{Title: "Setup", Session: sessionFrom(r), Data: map[string]any{
 		"Autofix": af, "ServerURL": strings.TrimRight(a.BaseURL, "/"),
+		"Allowed": r.URL.Query().Get("allowed"), "BuilderSteps": BuilderSteps(p.TargetAgent),
+		"PairCode": once.PairCode, "TokenFor": once.For,
+		"AgentTools": agentTools, "Deeplink": AgentDeeplink(once.For, mcpURL, newToken),
 		"Project": p, "ScriptTag": tag, "Prompt": InstallPrompt(p.TargetAgent, tag), "Status": st,
 		"GitHub": a.githubStatus(r, p.ID),
 		"DSN":    dsn, "ServerPrompt": ServerPrompt(dsn), "ServerSnippets": ServerSnippets(dsn),
@@ -385,6 +442,12 @@ func (a *App) createAgentToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(r.PostFormValue("name"))
+	tool := r.PostFormValue("for") // a one-click connect button: cursor, vscode, claude
+	if n := agentToolName(tool); n != "" && name == "" {
+		name = n
+	} else if n == "" {
+		tool = ""
+	}
 	if name == "" {
 		name = "AI agent"
 	}
@@ -404,7 +467,7 @@ func (a *App) createAgentToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	a.renderSetup(w, r, p, token)
+	a.renderSetup(w, r, p, setupOnce{Token: token, For: tool})
 }
 
 func (a *App) revokeAgentToken(w http.ResponseWriter, r *http.Request) {
@@ -429,7 +492,7 @@ func (a *App) setupStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	st, err := a.status(r.Context(), p.ID)
+	st, err := a.status(r, p)
 	if err != nil {
 		a.fail(w, err)
 		return

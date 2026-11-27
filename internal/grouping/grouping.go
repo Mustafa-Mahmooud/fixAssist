@@ -28,6 +28,11 @@ const MaxSamples = 20
 const (
 	AnalyzeMinUsers  = 2
 	AnalyzeMinEvents = 3
+	// EarlyExplainIssues: a project's first issues are explained at once,
+	// so a founder testing their setup sees an explanation without waiting
+	// for 2 people or 3 visits; they aren't explained again when they
+	// cross the threshold later.
+	EarlyExplainIssues = 3
 )
 
 // Result describes what grouping one event changed.
@@ -39,6 +44,7 @@ type Result struct {
 	NewRelease     bool
 	Regressed      bool
 	ReachedAnalyze bool // this event made the issue cross the analysis threshold
+	Early          bool // ReachedAnalyze because it is one of the project's first issues
 	Impact         float64
 }
 
@@ -252,6 +258,19 @@ func GroupEvent(ctx context.Context, pool *pgxpool.Pool, eventID int64, received
 		before := issue.EventCount-1 >= AnalyzeMinEvents || (userCount-boolInt(res.NewUser)) >= AnalyzeMinUsers
 		after := issue.EventCount >= AnalyzeMinEvents || userCount >= AnalyzeMinUsers
 		res.ReachedAnalyze = after && !before
+		if res.NewIssue || res.ReachedAnalyze {
+			// Early: the issue is one of the project's first ones. A new
+			// one is explained now; an old one crossing the threshold
+			// already was, so it isn't explained twice.
+			rank, err := q.IssueRank(ctx, db.IssueRankParams{ProjectID: ev.ProjectID, ID: issue.ID})
+			if err != nil {
+				return err
+			}
+			if rank <= EarlyExplainIssues {
+				res.Early = true
+				res.ReachedAnalyze = res.NewIssue
+			}
+		}
 
 		return q.MarkEventIssue(ctx, db.MarkEventIssueParams{IssueID: pgtype.Int8{Int64: issue.ID, Valid: true}, ID: ev.ID, ReceivedAt: ev.ReceivedAt})
 	})

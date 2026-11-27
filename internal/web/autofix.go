@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/yourname/fixassist/internal/agentapi"
 	"github.com/yourname/fixassist/internal/autofix"
 	"github.com/yourname/fixassist/internal/store/db"
 )
@@ -253,7 +254,7 @@ func (a *App) autofixSetup(ctx context.Context, projectID int64) (map[string]any
 		return nil, err
 	}
 	return map[string]any{"Enabled": set.AutofixEnabled, "Rule": set.AutofixRule, "Daemons": daemons, "Online": online,
-		"Runs": runs, "DailyCap": autofix.DailyCap, "Downloads": DownloadFiles}, nil
+		"Runs": runs, "Downloads": DownloadFiles}, nil
 }
 
 // autofixIssue is the issue page's auto-fix block.
@@ -273,6 +274,13 @@ func (a *App) autofixIssue(ctx context.Context, projectID, issueID int64) (map[s
 	case err == nil:
 		d["Run"] = run
 		d["Open"] = autofix.Open(run.State)
+		if run.State == autofix.Approved {
+			held, err := autofix.Held(ctx, q, projectID)
+			if err != nil {
+				return nil, err
+			}
+			d["Held"] = held
+		}
 	case !errors.Is(err, pgx.ErrNoRows):
 		return nil, err
 	}
@@ -305,4 +313,21 @@ func autofixStateName(s string) string {
 		return "Daemon offline: emailed the fix"
 	}
 	return s
+}
+
+// autofixPair makes a one-time code and shows the install command with it:
+// one paste installs fixassist, connects the folder it runs in, and starts
+// the background watcher.
+func (a *App) autofixPair(w http.ResponseWriter, r *http.Request) {
+	p, ok := a.project(w, r)
+	if !ok {
+		return
+	}
+	code, err := agentapi.CreatePairCode(r.Context(), a.Pool, p.ID, sessionFrom(r).UserID, time.Now())
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	a.renderSetup(w, r, p, setupOnce{PairCode: code})
 }

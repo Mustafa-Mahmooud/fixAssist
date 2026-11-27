@@ -1,7 +1,10 @@
 package web
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"html/template"
+	"net/url"
 	"strings"
 )
 
@@ -48,3 +51,43 @@ func LoopPrompt() string {
 		"then check_fix until it says looks_fixed, came_back or needs_human. If it came back, get_issue again and try the next attempt. " +
 		"Work on one issue at a time, and after each one tell me in a sentence what was wrong and what you changed."
 }
+
+// Deeplink is a one-click "add this MCP server" link for an editor.
+type Deeplink struct {
+	Name string
+	URL  template.URL // custom schemes (cursor:, vscode:) need marking as safe
+}
+
+// AgentDeeplink is the install link for the tool a token was made for:
+// Cursor and VS Code open their "add MCP server" prompt with the token
+// filled in. "" for tools without one.
+func AgentDeeplink(tool, mcpURL, token string) *Deeplink {
+	headers := map[string]string{"Authorization": "Bearer " + token}
+	switch tool {
+	case "cursor":
+		cfg, _ := json.Marshal(map[string]any{"url": mcpURL, "headers": headers})
+		return &Deeplink{"Cursor", template.URL("cursor://anysphere.cursor-deeplink/mcp/install?name=fix-assistant&config=" +
+			url.QueryEscape(base64.StdEncoding.EncodeToString(cfg)))}
+	case "vscode":
+		cfg, _ := json.Marshal(map[string]any{"name": "fix-assistant", "type": "http", "url": mcpURL, "headers": headers})
+		return &Deeplink{"VS Code", template.URL("vscode:mcp/install?" + uriComponent(string(cfg)))}
+	}
+	return nil
+}
+
+// agentTools are the one-click connect buttons: tool id and token name.
+var agentTools = []struct{ ID, Name string }{{"cursor", "Cursor"}, {"vscode", "VS Code"}, {"claude", "Claude Code"}}
+
+func agentToolName(id string) string {
+	for _, t := range agentTools {
+		if t.ID == id {
+			return t.Name
+		}
+	}
+	return ""
+}
+
+// uriComponent encodes like JavaScript's encodeURIComponent: spaces become
+// %20, not "+". VS Code decodes the link with decodeURIComponent, which
+// would leave a "+" in "Bearer fa_...".
+func uriComponent(s string) string { return strings.ReplaceAll(url.QueryEscape(s), "+", "%20") }

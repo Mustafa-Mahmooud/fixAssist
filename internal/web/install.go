@@ -55,3 +55,34 @@ func InstallPrompt(agent, tag string) string {
 			"To check: after publishing, open the app, view the page source, and confirm the line is inside <head> above the other scripts."
 	}
 }
+
+// BuilderSteps is where to paste the install message and how to publish,
+// per builder: short, because the builder's own screen is right there.
+// Button names vary between versions, so the usual alternatives are named.
+func BuilderSteps(agent string) []string {
+	switch agent {
+	case "lovable":
+		return []string{"Open your project in Lovable and paste the message into the chat. Send it.",
+			"When Lovable has made the change, click Publish (top right), then Update.",
+			"Open your live site once. Step 2 below turns green."}
+	case "bolt":
+		return []string{"Open your project in Bolt and paste the message into the chat. Send it.",
+			"When Bolt has made the change, publish it again (the Publish or Deploy button, top right).",
+			"Open your live site once. Step 2 below turns green."}
+	case "replit":
+		return []string{"Open your Repl and paste the message into the Agent (or Assistant) chat. Send it.",
+			"When it's done, redeploy: the Deploy or Republish button.",
+			"Open your live site once. Step 2 below turns green."}
+	case "v0":
+		return []string{"Open your chat in v0 and paste the message. Send it.",
+			"When v0 has made the change, publish again (the Publish or Deploy button, top right).",
+			"Open your live site once. Step 2 below turns green."}
+	case "cursor":
+		return []string{"Open your project in Cursor, start an Agent chat and paste the message. Send it.",
+			"Review the change, commit it and deploy the way you usually do (for example push to GitHub).",
+			"Open your live site once. Step 2 below turns green."}
+	}
+	return []string{"Paste the message into your AI agent's chat and send it.",
+		"When it has made the change, publish or deploy your app the way you usually do.",
+		"Open your live site once. Step 2 below turns green."}
+}

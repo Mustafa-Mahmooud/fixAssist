@@ -91,10 +91,12 @@ func referrerHost(ref, ownOrigin string) string {
 
 // parseAnalytics validates a batch and enriches it with the visitor hash,
 // country and device. Raw IPs, user agents and account ids are not kept.
-func (h *Handler) parseAnalytics(data []byte, r *http.Request, projectSecret []byte, projectID int64, now time.Time) ([]AnalyticsRow, error) {
+// backend is what the add-on detected from the app's requests ("stack"
+// event: supabase or firebase), or "".
+func (h *Handler) parseAnalytics(data []byte, r *http.Request, projectSecret []byte, projectID int64, now time.Time) (rows []AnalyticsRow, backend string, err error) {
 	var b analyticsBatch
 	if err := json.Unmarshal(data, &b); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if len(b.Events) > maxAnalyticsPerRequest {
 		b.Events = b.Events[:maxAnalyticsPerRequest]
@@ -105,8 +107,12 @@ func (h *Handler) parseAnalytics(data []byte, r *http.Request, projectSecret []b
 		visitor = h.Enrich.Visitor(projectSecret, projectID, truncate(b.VID, 64), ip, r.UserAgent(), now)
 		country = h.Enrich.Country(ip)
 	}
-	rows := make([]AnalyticsRow, 0, len(b.Events))
+	rows = make([]AnalyticsRow, 0, len(b.Events))
 	for _, e := range b.Events {
+		if e.Type == "stack" {
+			backend = e.Name
+			continue
+		}
 		if !analyticsTypes[e.Type] {
 			continue
 		}
@@ -133,7 +139,7 @@ func (h *Handler) parseAnalytics(data []byte, r *http.Request, projectSecret []b
 		}
 		rows = append(rows, row)
 	}
-	return rows, nil
+	return rows, backend, nil
 }
 
 func (h *Handler) analyticsEvents(w http.ResponseWriter, r *http.Request) {
@@ -147,11 +153,12 @@ func (h *Handler) analyticsEvents(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	rows, err := h.parseAnalytics(data, r, p.HMACSecret, p.ID, h.now())
+	rows, backend, err := h.parseAnalytics(data, r, p.HMACSecret, p.ID, h.now())
 	if err != nil {
 		h.fail(w, http.StatusBadRequest, "bad json", nil)
 		return
 	}
+	h.noteBackend(r.Context(), p, backend)
 	if len(rows) > 0 {
 		rec := Received{Project: p, PublicKey: p.PublicKey, Raw: data, Analytics: rows, Origin: r.Header.Get("Origin")}
 		if err := h.Sink.Analytics(r.Context(), rec); err != nil {

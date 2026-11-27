@@ -20,12 +20,56 @@
 {{end}}
 
 {{define "setup_status"}}
-<div id="setup-status"{{if not .Connected}} hx-get="/projects/{{.ProjectID}}/setup/status" hx-trigger="every 3s" hx-swap="outerHTML"{{end}}>
-  {{if .Connected}}
-    <p class="status-line flash good"><span class="dot ok"></span><span><b>Connected.</b> In the last 30 days: {{.PageViews}} page views and {{.Events}} errors{{if .ServerEvents}} ({{.ServerEvents}} from your server){{end}}. Latest {{ago .LastEventAt}}.</span></p>
-    <p><a class="button" href="/projects/{{.ProjectID}}/issues">See issues <i class="ico ico-arrow"></i></a></p>
+{{/* Polls until the first issue is in: first for the first visit, then so the first issue appears here too. */}}
+<div id="setup-status"{{if not .FirstIssueID}} hx-get="/projects/{{.ProjectID}}/setup/status" hx-trigger="every {{if .Connected}}10s{{else}}3s{{end}}" hx-swap="outerHTML"{{end}}>
+  {{if .FirstIssueID}}
+    <div class="flash good celebrate">
+      <p class="status-line" style="margin:0"><span class="dot ok"></span><span><b>It works! Your first issue is in.</b> Fix Assistant has received it and explains what happened.</span></p>
+      <p style="margin:.75rem 0 0"><a class="button" href="/projects/{{.ProjectID}}/issues/{{.FirstIssueID}}">See the explanation <i class="ico ico-arrow"></i></a></p>
+    </div>
+    <p class="muted small">In the last 30 days: {{.PageViews}} page views and {{.Events}} errors{{if .ServerEvents}} ({{.ServerEvents}} from your server){{end}}. Latest {{ago .LastEventAt}}.</p>
+  {{else if .Connected}}
+    <p class="status-line flash good"><span class="dot ok"></span><span><b>Connected.</b> In the last 30 days: {{.PageViews}} page views{{if .Events}} and {{.Events}} errors{{end}}. Latest {{ago .LastEventAt}}.</span></p>
+    <p class="muted">No problems yet, which is good news.{{if .TestURL}} To see what an issue looks like, send a test error: it opens your site and reports one harmless error.{{end}}</p>
+    {{if .TestURL}}<p><a class="button secondary" href="{{.TestURL}}" target="_blank" rel="noopener">Send a test error <i class="ico ico-arrow"></i></a></p>{{end}}
   {{else}}
-    <p class="status-line"><span class="dot"></span><span>Waiting for the first event… <span class="muted small">This updates by itself, no need to refresh.</span></span></p>
+    <p class="status-line"><span class="dot"></span><span>Waiting for the first visit… <span class="muted small">This updates by itself, no need to refresh.</span></span></p>
+  {{end}}
+  {{if .OfferGitHub}}
+  <div class="notice">
+    <p><b>Next: make fixes point to the exact file.</b> If your app's code is on GitHub (Lovable, Bolt and Cursor can sync it there), connect it and every fix message names the file and line to change. Read-only; your code is never stored.</p>
+    <form method="post" action="/projects/{{.ProjectID}}/github/connect" style="margin:0">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <button type="submit" class="secondary" data-busy="Opening GitHub…">Connect GitHub</button>
+    </form>
+  </div>
+  {{end}}
+  {{if .Rejected}}
+  <div class="notice">
+    <p><b>Visits from {{if eq (len .Rejected) 1}}another address{{else}}other addresses{{end}} were refused.</b> Fix Assistant only accepts visits from your app's addresses. If {{if eq (len .Rejected) 1}}this is{{else}}one is{{end}} your live app under another address (such as your own domain), allow it. If it's your builder's preview, you can allow it too, but publish your app and open the live address to finish setup.</p>
+    {{range .Rejected}}
+    <form method="post" action="/projects/{{$.ProjectID}}/domains" class="row" style="margin:.4rem 0">
+      <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="host" value="{{.Host}}">
+      <code>{{.Host}}</code> <span class="muted small">{{.Hits}} {{if eq .Hits 1}}time{{else}}times{{end}}, latest {{ago .LastSeen}}</span>
+      <button type="submit" class="secondary" data-busy="Allowing…">Allow</button>
+    </form>
+    {{end}}
+    <p class="muted small" style="margin-bottom:0">Don't recognize it? Leave it: someone may have copied your snippet to their own site.</p>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "site_check"}}
+<div id="site-check" class="flash {{if eq .Level "good"}}good{{else if eq .Level "bad"}}error{{else}}warn{{end}}" role="status">
+  <p style="margin:0"><b>{{.Title}}</b></p>
+  <p class="small" style="margin:.35rem 0 0">{{.Text}}</p>
+  {{with .URL}}<p class="muted small" style="margin:.35rem 0 0">Checked <a href="{{.}}" target="_blank" rel="noopener">{{.}}</a></p>{{end}}
+  {{if .AllowHost}}
+  <form method="post" action="/projects/{{.ProjectID}}/domains" class="row" style="margin:.5rem 0 0">
+    <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="host" value="{{.AllowHost}}">
+    <button type="submit" class="secondary" data-busy="Allowing…">Allow {{.AllowHost}}</button>
+  </form>
   {{end}}
 </div>
 {{end}}
@@ -82,26 +126,19 @@
 {{define "new_project_form"}}
 <form method="post" action="/projects" class="card">
   <input type="hidden" name="csrf" value="{{.Session.CSRF}}">
-  <label for="name">What's your app called?</label>
-  <input id="name" type="text" name="name" required maxlength="80" placeholder="My booking app">
-  <div class="grid">
-    <div>
-      <label for="agent">What did you build it with?</label>
-      <select id="agent" name="agent">
-        {{range .Data.Agents}}<option value="{{.}}">{{agentName .}}</option>{{end}}
-      </select>
-    </div>
-    <div>
-      <label for="backend">Where is its data stored? <span class="muted small">(pick "not sure" if unsure)</span></label>
-      <select id="backend" name="backend">
-        <option value="supabase">Supabase</option>
-        <option value="firebase">Firebase</option>
-        <option value="unknown">Other / not sure</option>
-      </select>
-    </div>
-  </div>
-  <label for="domains">Your app's web address <span class="muted small">(optional; events from other sites are rejected)</span></label>
-  <input id="domains" type="text" name="domains" placeholder="myapp.lovable.app">
+  <label for="address" style="margin-top:0">Your app's web address</label>
+  <input id="address" type="text" name="address" required inputmode="url" autocomplete="url" autocapitalize="off" spellcheck="false" value="{{.Data.Form.Get "address"}}" placeholder="myapp.lovable.app">
+  <p class="muted small">The address your visitors open, not the editor. Copy it from your browser's address bar on your live app.</p>
+  <fieldset class="tiles">
+    <legend>What did you build it with?</legend>
+    {{$sel := or (.Data.Form.Get "agent") "lovable"}}
+    {{range .Data.Agents}}<label class="tile"><input type="radio" name="agent" value="{{.}}"{{if eq . $sel}} checked{{end}}><span>{{if eq . "other"}}Something else{{else}}{{agentName .}}{{end}}</span></label>{{end}}
+  </fieldset>
+  <details style="margin-top:.75rem"{{if .Data.Form.Get "name"}} open{{end}}>
+    <summary class="small">Give it a different name <span class="muted">(optional)</span></summary>
+    <label for="name">Name</label>
+    <input id="name" type="text" name="name" maxlength="80" value="{{.Data.Form.Get "name"}}" placeholder="We'll use the address, e.g. myapp">
+  </details>
   <p style="margin-top:1.1rem"><button type="submit" class="big" data-busy="Creating…">Create and get install steps <i class="ico ico-arrow"></i></button></p>
 </form>
 {{end}}
@@ -123,7 +160,7 @@
         {{if not .Done}}
         <p class="small">{{.Text}}</p>
         {{with .Code}}<pre class="small">{{.}}</pre>{{end}}
-        {{if .Link}}<p class="small"><a href="{{.Link}}">{{.LinkText}} <i class="ico ico-arrow"></i></a></p>{{end}}
+        {{if .Link}}<p class="small"><a href="{{.Link}}"{{if .External}} target="_blank" rel="noopener"{{end}}>{{.LinkText}} <i class="ico ico-arrow"></i></a></p>{{end}}
         {{end}}
       </div>
     </li>
@@ -157,7 +194,7 @@
 {{define "stage_pips"}}<span class="pips" title="{{.StageHint}}">{{range $i, $s := .Pips}}<i class="{{if $s}}on{{end}}"></i>{{end}}</span> <span class="small">{{.StageLabel}}</span>{{end}}
 
 {{define "role_button"}}{{with .M}}{{if .Owner}}<span class="hint muted small" title="Listed in STAFF_EMAILS on the server, so always an admin. Change it there.">Owner</span>
-{{else if not .Self}}<form method="post" action="/admin/users/{{.ID}}/role"{{if ne .Role "admin"}} data-confirm="Make {{.Email}} an admin?" data-confirm-text="They'll see the admin area and every account's apps (read-only), and can make other people admins." data-confirm-ok="Make admin"{{end}}><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="role" value="{{if eq .Role "admin"}}user{{else}}admin{{end}}"><button class="link small">{{if eq .Role "admin"}}Remove admin{{else}}Make admin{{end}}</button></form>{{end}}{{end}}{{end}}
+{{else if not .Self}}<form method="post" action="/admin/users/{{.ID}}/role"{{if ne .Role "admin"}} data-confirm="Make {{.Email}} an admin?" data-confirm-text="They'll see the admin area and have full access to every account's apps, and can make other people admins." data-confirm-ok="Make admin"{{end}}><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="role" value="{{if eq .Role "admin"}}user{{else}}admin{{end}}"><button class="link small">{{if eq .Role "admin"}}Remove admin{{else}}Make admin{{end}}</button></form>{{end}}{{end}}{{end}}
 
 {{define "admin_app_table"}}
 <table>

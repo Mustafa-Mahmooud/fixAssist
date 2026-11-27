@@ -149,7 +149,10 @@ func Classify(ev *Event) (kind, fingerprint string) {
 	if h, ok := ev.HTTP(); ok {
 		return KindNet, normalize.NetFingerprint(NetFailure(h))
 	}
-	if ev.MainException() != nil {
+	if ex := ev.MainException(); ex != nil {
+		if normalize.IsTestError(ex.Type, ex.Value) {
+			return KindJS, normalize.TestErrorFingerprint()
+		}
 		return KindJS, normalize.JSFingerprintV2(JSError(ev))
 	}
 	return KindMessage, normalize.MessageFingerprint(ev.MessageText(), ev.PageURL())
