@@ -132,6 +132,65 @@
   </div>
 </section>
 
+{{with .Data.Autofix}}
+<section class="card" id="autofix">
+  <h2>Auto-fix high-impact issues <span class="muted small">(optional, Claude Code)</span></h2>
+  <p class="muted">When a high-impact issue comes in, Fix Assistant emails you an <b>Auto-fix this</b> button. Once you approve, a small program on your computer runs Claude Code on the fix in a separate branch (your own checkout is never touched), opens a pull request, and turns on auto-merge, so it merges once your checks pass. After the merge, Fix Assistant watches for the error on the new version as usual and tries again, up to {{$.Data.MaxAttempts}} times, if it comes back.</p>
+  <p class="muted small">You need <a href="https://docs.anthropic.com/en/docs/claude-code" rel="noopener">Claude Code</a>, git and the <a href="https://cli.github.com" rel="noopener">GitHub CLI</a> (<code>gh auth login</code>) on that computer. Your code stays on your computer. At most one fix runs at a time, and at most {{.DailyCap}} a day.</p>
+
+  <p class="muted small"><b>1.</b> Create an agent token above, then connect the daemon to this app's repository:</p>
+  <div class="copy-wrap">
+    <pre id="autofix-setup">fixassist add --server {{$.Data.ServerURL}} --token {{if $.Data.NewToken}}{{$.Data.NewToken}}{{else}}&lt;your agent token&gt;{{end}} --repo /path/to/your/app
+fixassist watch</pre>
+    <button type="button" class="secondary" data-copy="#autofix-setup"><span class="label">Copy</span></button>
+  </div>
+
+  <p class="muted small"><b>2.</b> Daemons:</p>
+  {{if .Daemons}}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Computer</th><th>Token</th><th>Last seen</th></tr></thead>
+      <tbody>
+      {{range .Daemons}}
+        <tr><td><span class="dot {{if .Online}}ok{{else}}bad{{end}}"></span> {{or .Hostname "unknown"}} {{if .Version}}<span class="muted small">v{{.Version}}</span>{{end}}</td><td>{{.TokenName}}</td><td>{{ago .LastSeenAt.Time}}{{if not .Online}} <span class="muted small">(offline)</span>{{end}}</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <p class="muted small">No daemon has connected yet. Run <code>fixassist watch</code>; it shows up here within a few seconds.</p>
+  {{end}}
+
+  <p class="muted small"><b>3.</b> Turn it on:</p>
+  <form method="post" action="/projects/{{$.Data.Project.ID}}/autofix">
+    <input type="hidden" name="csrf" value="{{$.Session.CSRF}}">
+    <p><label style="margin:0"><input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}} {{if and (not .Enabled) (not .Daemons)}}disabled{{end}}> Auto-fix high-impact issues in this app</label></p>
+    <p><label for="autofix-rule" style="margin:0">Approval</label>
+      <select id="autofix-rule" name="rule" style="width:auto">
+        <option value="off" {{if ne .Rule "high"}}selected{{end}}>Ask me before each fix (merges on green checks)</option>
+        <option value="high" {{if eq .Rule "high"}}selected{{end}}>Start every high-impact fix without asking (I approve each merge)</option>
+      </select>
+    </p>
+    <p class="muted small">Without asking, the pull request still waits for you to approve the merge: the error details in the fix come from your app's visitors, so a person should read the change first. If your default branch doesn't require status checks, nothing merges on its own and you merge on GitHub. If the daemon is offline for 10 minutes, we email you the fix to paste instead.</p>
+    <button type="submit" class="secondary" data-busy="Saving…">Save</button>
+  </form>
+
+  {{if .Runs}}
+  <h3>Recent auto-fixes</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Issue</th><th>State</th><th>Pull request</th><th>When</th></tr></thead>
+      <tbody>
+      {{range .Runs}}
+        <tr><td><a href="/projects/{{$.Data.Project.ID}}/issues/{{.IssueID}}#autofix">{{code .IssueTitle}}</a></td><td>{{autofixState .State}}</td><td>{{if .PrUrl}}<a href="{{.PrUrl}}" rel="noopener">open</a>{{else}}<span class="muted">—</span>{{end}}</td><td>{{ago .CreatedAt.Time}}</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+</section>
+{{end}}
+
 <section class="card" id="training">
   <h2>Help improve fix suggestions</h2>
   <p class="muted">Fix Assistant trains its own AI model (it runs on our servers, not another company's) on errors and on whether their fixes worked, so new kinds of errors get better suggestions. Before anything is kept for this, personal details, IP addresses, keys and other secrets are removed. See the <a href="/privacy#training">privacy policy</a>.</p>

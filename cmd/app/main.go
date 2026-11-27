@@ -209,6 +209,9 @@ func serve(ctx context.Context, log *slog.Logger, args []string) error {
 		FeedbackLink: func(sid int64, outcome string) string {
 			return web.FeedbackLink(appBase(*addr), secret, sid, outcome, time.Now())
 		},
+		AutofixLink: func(runID int64) string {
+			return web.AutofixLink(appBase(*addr), secret, runID, time.Now())
+		},
 	}
 	ghApp, err := github.FromEnv()
 	if err != nil {

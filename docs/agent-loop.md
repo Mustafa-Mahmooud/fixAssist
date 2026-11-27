@@ -85,4 +85,4 @@ The full rule (20 sessions and 48 hours) is far too slow for an agent waiting on
 - **Connecting a real Cursor or Claude Code session:** the protocol was exercised by a test client making the same calls. The first real client may need small adjustments.
 - **Browser builders (Lovable, Bolt):** I haven't confirmed whether they can call MCP servers. Their founders can still use the same loop by hand: "I applied the fix" and the quick check.
 - **Per-token rate limiting and an audit view of agent actions** beyond the attempt history.
-- **Deploying is the agent's or the founder's job.** Fix Assistant never deploys.
+- **Deploying is the agent's or the founder's job.** Fix Assistant never deploys. With [auto-fix](autofix.md) on, the founder's own daemon can merge a pull request once the repository's required checks pass. If the app deploys on merge, that merge deploys it. Fix Assistant's server still has read-only access to code.

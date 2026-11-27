@@ -77,6 +77,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /agent/v1/issues/{id}", h.restGet)
 	mux.HandleFunc("POST /agent/v1/issues/{id}/fix", h.restReport)
 	mux.HandleFunc("GET /agent/v1/issues/{id}/check", h.restCheck)
+	// Auto-fix daemon (cmd/fixassist).
+	mux.HandleFunc("POST /agent/v1/autofix/claim", h.restClaim)
+	mux.HandleFunc("GET /agent/v1/autofix/prs", h.restPRs)
+	mux.HandleFunc("POST /agent/v1/autofix/runs/{id}", h.restRunEvent)
 }
 
 func methodNotAllowed(w http.ResponseWriter, _ *http.Request) {

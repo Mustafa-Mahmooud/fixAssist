@@ -96,3 +96,14 @@ type Partitions struct{}
 func (Partitions) Kind() string { return "partitions" }
 
 func (Partitions) InsertOpts() river.InsertOpts { return river.InsertOpts{Queue: QueueMaintenance} }
+
+// AutofixSweep fails auto-fix runs whose daemon went quiet, expires old
+// approval requests and emails approved runs no daemon is online for
+// (every minute).
+type AutofixSweep struct{}
+
+func (AutofixSweep) Kind() string { return "autofix_sweep" }
+
+func (AutofixSweep) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{Queue: QueueAlerts, UniqueOpts: river.UniqueOpts{ByPeriod: time.Minute}}
+}

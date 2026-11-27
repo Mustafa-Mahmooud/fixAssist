@@ -1,0 +1,30 @@
+{{define "content"}}
+<h1><span class="logo" aria-hidden="true">FA</span>Fix Assistant</h1>
+{{with .Data}}
+{{if .Invalid}}
+  <p class="flash error" role="alert">This link is invalid or has expired.</p>
+  <p><a href="/login">Sign in</a> and start the auto-fix on the issue page instead.</p>
+{{else if .Done}}
+  <div class="card">
+    <p class="status-line" style="margin-top:0"><span class="dot ok"></span><b>Approved.</b></p>
+    <p class="muted">Your coding agent will fix “{{code .Title}}” in a separate branch and open a pull request. It merges once your checks pass. If the Fix Assistant daemon on your computer is offline, we'll email you the fix to paste instead.</p>
+  </div>
+  <p><a class="button" href="{{.IssueURL}}#autofix">Follow it on the issue page</a> <span class="muted small">(you may need to sign in)</span></p>
+{{else if ne .State "pending_approval"}}
+  <div class="card">
+    <p style="margin-top:0"><b>“{{code .Title}}”</b></p>
+    <p class="muted">{{if eq .State "approved" "claimed" "pr_opened" "awaiting_merge_approval" "merge_approved" "merged"}}This auto-fix was already approved.{{else if eq .State "rejected"}}This auto-fix was cancelled.{{else if eq .State "off"}}Auto-fix is turned off for this app. Turn it on in Setup, then start it from the issue page.{{else}}This auto-fix request is no longer open.{{end}}</p>
+  </div>
+  <p><a class="button" href="{{.IssueURL}}#autofix">Open the issue</a> <span class="muted small">(you may need to sign in)</span></p>
+{{else}}
+  <form method="post" class="card">
+    <input type="hidden" name="e" value="{{.E}}">
+    <input type="hidden" name="s" value="{{.S}}">
+    <p style="margin-top:0"><b>“{{code .Title}}”</b></p>
+    <p>Let your coding agent fix this on its own? It works in a separate branch on your computer, opens a pull request, and merges it once your checks pass.</p>
+    <p style="margin-bottom:0"><button type="submit" data-busy="Approving…">Yes, auto-fix it</button></p>
+  </form>
+  <p class="small muted">One more click so email security scanners can't approve for you.</p>
+{{end}}
+{{end}}
+{{end}}

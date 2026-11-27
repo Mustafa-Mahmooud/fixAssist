@@ -15,6 +15,7 @@ import (
 	"github.com/yourname/fixassist/internal/ai"
 	"github.com/yourname/fixassist/internal/alerts"
 	"github.com/yourname/fixassist/internal/analytics"
+	"github.com/yourname/fixassist/internal/autofix"
 	"github.com/yourname/fixassist/internal/grouping"
 	"github.com/yourname/fixassist/internal/jobs/jobargs"
 	"github.com/yourname/fixassist/internal/store"
@@ -63,14 +64,16 @@ func (w *GroupEventWorker) Work(ctx context.Context, job *river.Job[jobargs.Grou
 	return nil
 }
 
-// AnalyzeWorker explains an issue (agent mode: catalog + agent prompt) and
-// queues the instant-alert check.
+// AnalyzeWorker explains an issue (agent mode: catalog + agent prompt),
+// starts an auto-fix run for high-severity issues when the project wants
+// one, and queues the instant-alert check.
 type AnalyzeWorker struct {
 	river.WorkerDefaults[jobargs.AnalyzeIssue]
-	Pool  *pgxpool.Pool
-	Log   *slog.Logger
-	Code  ai.CodeSearcher // optional: GitHub code context
-	Model ai.LLM          // optional: our model for errors outside the catalog
+	Pool     *pgxpool.Pool
+	Log      *slog.Logger
+	Code     ai.CodeSearcher  // optional: GitHub code context
+	Model    ai.LLM           // optional: our model for errors outside the catalog
+	Notifier *alerts.Notifier // optional: auto-fix approval emails
 }
 
 func (w *AnalyzeWorker) Work(ctx context.Context, job *river.Job[jobargs.AnalyzeIssue]) error {
@@ -83,11 +86,55 @@ func (w *AnalyzeWorker) Work(ctx context.Context, job *river.Job[jobargs.Analyze
 		return err
 	}
 	w.Log.Info("issue explained", "issue_id", job.Args.IssueID, "suggestion_id", id, "origin", s.Origin, "catalog", s.CatalogKey, "severity", s.Severity)
+	w.considerAutofix(ctx, job.Args.IssueID, id)
 	client, err := river.ClientFromContextSafely[pgx.Tx](ctx)
 	if err != nil {
 		return err
 	}
 	_, err = client.Insert(ctx, jobargs.AlertCheck{IssueID: job.Args.IssueID}, nil)
+	return err
+}
+
+// considerAutofix never fails the job: a retry would explain the issue again.
+func (w *AnalyzeWorker) considerAutofix(ctx context.Context, issueID, suggestionID int64) {
+	sug, err := db.New(w.Pool).SuggestionByID(ctx, suggestionID)
+	if err != nil {
+		w.Log.Warn("auto-fix: load suggestion", "issue_id", issueID, "err", err)
+		return
+	}
+	run, created, err := autofix.Consider(ctx, w.Pool, issueID, sug, time.Now())
+	if err != nil {
+		w.Log.Warn("auto-fix: consider", "issue_id", issueID, "err", err)
+		return
+	}
+	if !created {
+		return
+	}
+	w.Log.Info("auto-fix run", "issue_id", issueID, "run_id", run.ID, "state", run.State)
+	if run.State == autofix.PendingApproval && w.Notifier != nil {
+		if err := w.Notifier.AutofixApproval(ctx, run); err != nil {
+			w.Log.Warn("auto-fix: approval email", "run_id", run.ID, "err", err)
+		}
+	}
+}
+
+// AutofixSweepWorker runs autofix.Sweep.
+type AutofixSweepWorker struct {
+	river.WorkerDefaults[jobargs.AutofixSweep]
+	Pool     *pgxpool.Pool
+	Notifier *alerts.Notifier
+	Log      *slog.Logger
+}
+
+func (w *AutofixSweepWorker) Work(ctx context.Context, _ *river.Job[jobargs.AutofixSweep]) error {
+	var m autofix.Mailer
+	if w.Notifier != nil {
+		m = w.Notifier
+	}
+	st, err := autofix.Sweep(ctx, w.Pool, m, time.Now())
+	if st != (autofix.SweepStats{}) {
+		w.Log.Info("auto-fix sweep", "leases_failed", st.LeasesFailed, "expired", st.Expired, "emailed", st.Emailed)
+	}
 	return err
 }
 
@@ -229,7 +276,8 @@ func NewClientWith(d Deps) (*river.Client[pgx.Tx], error) {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &GroupEventWorker{Pool: d.Pool, Log: d.Log})
 	river.AddWorker(workers, &PartitionsWorker{Pool: d.Pool, Log: d.Log})
-	river.AddWorker(workers, &AnalyzeWorker{Pool: d.Pool, Log: d.Log, Code: d.Code, Model: d.Model})
+	river.AddWorker(workers, &AnalyzeWorker{Pool: d.Pool, Log: d.Log, Code: d.Code, Model: d.Model, Notifier: d.Notifier})
+	river.AddWorker(workers, &AutofixSweepWorker{Pool: d.Pool, Notifier: d.Notifier, Log: d.Log})
 	river.AddWorker(workers, &AlertCheckWorker{Notifier: d.Notifier, Log: d.Log})
 	river.AddWorker(workers, &DigestWorker{Notifier: d.Notifier, Log: d.Log})
 	river.AddWorker(workers, &VerifyWorker{Pool: d.Pool, Log: d.Log})
@@ -257,6 +305,9 @@ func NewClientWith(d Deps) (*river.Client[pgx.Tx], error) {
 				&river.PeriodicJobOpts{RunOnStart: true}),
 			river.NewPeriodicJob(river.PeriodicInterval(time.Minute),
 				func() (river.JobArgs, *river.InsertOpts) { return jobargs.RollupToday{}, nil },
+				nil),
+			river.NewPeriodicJob(river.PeriodicInterval(time.Minute),
+				func() (river.JobArgs, *river.InsertOpts) { return jobargs.AutofixSweep{}, nil },
 				nil),
 			river.NewPeriodicJob(river.PeriodicInterval(15*time.Minute),
 				func() (river.JobArgs, *river.InsertOpts) { return jobargs.VerifyFixes{}, nil },

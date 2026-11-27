@@ -39,8 +39,11 @@ type Notifier struct {
 	// FeedbackLink, if set, adds signed "Worked / Didn't work" links to
 	// instant alerts (set by cmd/app to web.FeedbackLink).
 	FeedbackLink func(suggestionID int64, outcome string) string
-	Log          *slog.Logger
-	Now          func() time.Time
+	// AutofixLink, if set, is the signed "Auto-fix this" link in auto-fix
+	// approval emails (set by cmd/app to web.AutofixLink).
+	AutofixLink func(runID int64) string
+	Log         *slog.Logger
+	Now         func() time.Time
 }
 
 func (n *Notifier) now() time.Time {

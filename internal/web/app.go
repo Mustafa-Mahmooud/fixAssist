@@ -105,6 +105,12 @@ func (a *App) Register(mux *http.ServeMux) {
 	mux.Handle("POST /projects/{id}/training", a.signedIn(a.setTraining))
 	mux.HandleFunc("GET /f/{sid}/{outcome}", a.feedbackLinkPage)
 	mux.HandleFunc("POST /f/{sid}/{outcome}", a.feedbackLinkSubmit)
+	mux.Handle("POST /projects/{id}/autofix", a.signedIn(a.setAutofix))
+	mux.Handle("POST /projects/{id}/issues/{issue}/autofix", a.signedIn(a.startAutofix))
+	mux.Handle("POST /projects/{id}/autofix/{run}/reject", a.signedIn(a.rejectAutofix))
+	mux.Handle("POST /projects/{id}/autofix/{run}/merge", a.signedIn(a.approveAutofixMerge))
+	mux.HandleFunc("GET /a/{run}", a.autofixLinkConfirm)
+	mux.HandleFunc("POST /a/{run}", a.autofixLinkSubmit)
 }
 
 func (a *App) secureCookies() bool { return strings.HasPrefix(a.BaseURL, "https://") }
@@ -357,7 +363,13 @@ func (a *App) renderSetup(w http.ResponseWriter, r *http.Request, p db.GetOrgPro
 		shown = "<your agent token>"
 	}
 	mcpURL := strings.TrimRight(a.BaseURL, "/") + "/mcp"
+	af, err := a.autofixSetup(r.Context(), p.ID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
 	a.render(w, 200, "setup", page{Title: "Setup", Session: sessionFrom(r), Data: map[string]any{
+		"Autofix": af, "ServerURL": strings.TrimRight(a.BaseURL, "/"),
 		"Project": p, "ScriptTag": tag, "Prompt": InstallPrompt(p.TargetAgent, tag), "Status": st,
 		"GitHub": a.githubStatus(r, p.ID),
 		"DSN":    dsn, "ServerPrompt": ServerPrompt(dsn), "ServerSnippets": ServerSnippets(dsn),
@@ -523,6 +535,10 @@ func (a *App) issuePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data["Attempts"] = attempts
+	if data["Autofix"], err = a.autofixIssue(r.Context(), p.ID, is.ID); err != nil {
+		a.fail(w, err)
+		return
+	}
 	if is.Status == "verifying" {
 		data["Verify"] = a.verifyProgress(r, p.ID, is)
 	}

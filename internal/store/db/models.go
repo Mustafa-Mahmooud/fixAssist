@@ -59,6 +59,14 @@ func (ns NullRiverJobState) Value() (driver.Value, error) {
 	return string(ns.RiverJobState), nil
 }
 
+type AgentDaemon struct {
+	TokenID    int64
+	ProjectID  int64
+	Hostname   string
+	Version    string
+	LastSeenAt pgtype.Timestamptz
+}
+
 type AgentToken struct {
 	ID         int64
 	ProjectID  int64
@@ -100,6 +108,28 @@ type AnalyticsEvent struct {
 	UtmCampaign  pgtype.Text
 	Country      pgtype.Text
 	Device       pgtype.Text
+}
+
+type AutofixRun struct {
+	ID             int64
+	ProjectID      int64
+	IssueID        int64
+	SuggestionID   pgtype.Int8
+	State          string
+	ApprovedBy     pgtype.Text
+	ApprovedUserID pgtype.Int8
+	ApprovedAt     pgtype.Timestamptz
+	AutoMerge      bool
+	TokenID        pgtype.Int8
+	ClaimedAt      pgtype.Timestamptz
+	LeaseUntil     pgtype.Timestamptz
+	Branch         string
+	PrUrl          string
+	Summary        string
+	Files          []string
+	Error          string
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
 }
 
 type DailyClickStat struct {
@@ -415,6 +445,8 @@ type Project struct {
 	Timezone              string
 	OnboardingDismissedAt pgtype.Timestamptz
 	TrainingOptOut        bool
+	AutofixEnabled        bool
+	AutofixRule           string
 }
 
 type ProjectGithub struct {

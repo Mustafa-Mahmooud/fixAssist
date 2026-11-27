@@ -145,13 +145,14 @@ var funcs = template.FuncMap{
 		}
 		return s
 	},
+	"autofixState": autofixStateName,
 }
 
 // pages are parsed once: layout + partials + one page each.
 var pages = map[string]*template.Template{}
 
 func init() {
-	for _, p := range []string{"login", "magic", "projects", "setup", "issues", "issue", "alerts", "feedback", "admin", "admin_accounts", "admin_account", "admin_growth", "overview", "pages", "funnels", "insights", "admin_github", "welcome", "privacy"} {
+	for _, p := range []string{"login", "magic", "projects", "setup", "issues", "issue", "alerts", "feedback", "admin", "admin_accounts", "admin_account", "admin_growth", "overview", "pages", "funnels", "insights", "admin_github", "welcome", "privacy", "autofix"} {
 		pages[p] = template.Must(template.New(p).Funcs(funcs).ParseFS(templateFS,
 			"templates/layout.html", "templates/partials.html", "templates/"+p+".html"))
 	}
