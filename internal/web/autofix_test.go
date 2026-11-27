@@ -55,7 +55,7 @@ func TestAutofixDashboard(t *testing.T) {
 	// No daemon yet: the switch can't be turned on.
 	resp, _ := founder.Get(base + "/setup")
 	b := body(t, resp)
-	for _, want := range []string{`id="autofix"`, "No daemon has connected yet", "fixassist add --server " + srv.URL, `name="enabled"  disabled`} {
+	for _, want := range []string{`id="autofix"`, "No daemon has connected yet", "fixassist add --server " + srv.URL, "irm " + srv.URL + "/install/fixassist.ps1 | iex", "curl -fsSL " + srv.URL + "/install/fixassist.sh | sh", `href="/download/fixassist/fixassist-windows-amd64.exe"`, `name="enabled"  disabled`} {
 		if !strings.Contains(b, want) {
 			t.Errorf("setup missing %q", want)
 		}

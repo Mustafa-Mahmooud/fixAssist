@@ -281,6 +281,8 @@ func serve(ctx context.Context, log *slog.Logger, args []string) error {
 		}).Register(mux)
 		// The agent loop: MCP at /mcp, JSON at /agent/v1 (agent tokens).
 		(&agentapi.Handler{Pool: pool, Code: code, Model: model, Log: log}).Register(mux)
+		// The auto-fix helper's downloads and install scripts.
+		(&web.Downloads{Dir: os.Getenv("FIXASSIST_DOWNLOADS"), BaseURL: base}).Register(mux)
 		log.Info("dashboard", "url", base)
 	}
 	if enabled["worker"] {

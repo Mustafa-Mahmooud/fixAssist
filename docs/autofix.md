@@ -6,6 +6,13 @@ The [agent loop](agent-loop.md) only runs when the founder asks their coding age
 
 - **The daemon, [cmd/fixassist](../cmd/fixassist).** A small Go program that runs on the founder's computer, next to their code. It needs Claude Code (`claude`), git, and the GitHub CLI (`gh auth login`).
 
+  **Getting it.** The Docker image builds it for Windows, macOS and Linux (amd64 and arm64) into `/downloads` (`FIXASSIST_DOWNLOADS`), so the download always matches the server. The server serves it ([downloads.go](../internal/web/downloads.go)), and the Setup page offers both the one-liners and the download buttons:
+  - **Binaries:** `GET /download/fixassist/fixassist-<os>-<arch>[.exe]`.
+  - **Windows install script:** `irm <server>/install/fixassist.ps1 | iex`. It installs to `%LOCALAPPDATA%\fixassist` and adds that to the user's PATH.
+  - **macOS and Linux install script:** `curl -fsSL <server>/install/fixassist.sh | sh`. It installs to `~/.local/bin`, or `$FIXASSIST_DIR`.
+
+  Running either script again updates fixassist; on Windows it also restarts the background task.
+
   ```
   fixassist add --server https://fix.example.com --token fa_... --repo ~/code/shop [--base main] [--test "npm ci && npm test"]
   fixassist install   # or: fixassist watch, in a terminal you keep open

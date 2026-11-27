@@ -253,7 +253,7 @@ func (a *App) autofixSetup(ctx context.Context, projectID int64) (map[string]any
 		return nil, err
 	}
 	return map[string]any{"Enabled": set.AutofixEnabled, "Rule": set.AutofixRule, "Daemons": daemons, "Online": online,
-		"Runs": runs, "DailyCap": autofix.DailyCap}, nil
+		"Runs": runs, "DailyCap": autofix.DailyCap, "Downloads": DownloadFiles}, nil
 }
 
 // autofixIssue is the issue page's auto-fix block.

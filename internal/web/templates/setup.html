@@ -138,7 +138,22 @@
   <p class="muted">When a high-impact issue comes in, Fix Assistant emails you an <b>Auto-fix this</b> button. Once you approve, a small program on your computer runs Claude Code on the fix in a separate branch (your own checkout is never touched), opens a pull request, and turns on auto-merge, so it merges once your checks pass. After the merge, Fix Assistant watches for the error on the new version as usual and tries again, up to {{$.Data.MaxAttempts}} times, if it comes back.</p>
   <p class="muted small">You need <a href="https://docs.anthropic.com/en/docs/claude-code" rel="noopener">Claude Code</a>, git and the <a href="https://cli.github.com" rel="noopener">GitHub CLI</a> (<code>gh auth login</code>) on that computer. Your code stays on your computer. At most one fix runs at a time, and at most {{.DailyCap}} a day.</p>
 
-  <p class="muted small"><b>1.</b> Create an agent token above, then connect the daemon to this app's repository:</p>
+  <p class="muted small"><b>1.</b> Install <b>fixassist</b>, the small helper that does the fixing, on the computer that has your app's code. On Windows, paste this into PowerShell:</p>
+  <div class="copy-wrap">
+    <pre id="autofix-install-win">irm {{$.Data.ServerURL}}/install/fixassist.ps1 | iex</pre>
+    <button type="button" class="secondary" data-copy="#autofix-install-win"><span class="label">Copy</span></button>
+  </div>
+  <p class="muted small">On a Mac or Linux, paste this into Terminal:</p>
+  <div class="copy-wrap">
+    <pre id="autofix-install-unix">curl -fsSL {{$.Data.ServerURL}}/install/fixassist.sh | sh</pre>
+    <button type="button" class="secondary" data-copy="#autofix-install-unix"><span class="label">Copy</span></button>
+  </div>
+  <p class="row small" style="gap:.5rem">
+    <span class="muted">Or download it yourself:</span>
+    {{range .Downloads}}<a class="button secondary" href="/download/fixassist/{{.File}}" download><i class="ico ico-download"></i>{{.Label}}</a>{{end}}
+  </p>
+
+  <p class="muted small"><b>2.</b> Create an agent token above, then connect fixassist to this app's code and start it:</p>
   <div class="copy-wrap">
     <pre id="autofix-setup">fixassist add --server {{$.Data.ServerURL}} --token {{if $.Data.NewToken}}{{$.Data.NewToken}}{{else}}&lt;your agent token&gt;{{end}} --repo /path/to/your/app
 fixassist install</pre>
@@ -146,7 +161,7 @@ fixassist install</pre>
   </div>
   <p class="muted small"><code>fixassist install</code> keeps it running in the background with no window: it starts by itself when you log in and restarts if it stops. <code>fixassist status</code> shows what it's doing; <code>fixassist uninstall</code> stops it.</p>
 
-  <p class="muted small"><b>2.</b> Daemons:</p>
+  <p class="muted small"><b>3.</b> Connected computers:</p>
   {{if .Daemons}}
   <div class="table-wrap">
     <table>
@@ -162,7 +177,7 @@ fixassist install</pre>
   <p class="muted small">No daemon has connected yet. Run <code>fixassist install</code>; it shows up here within a few seconds.</p>
   {{end}}
 
-  <p class="muted small"><b>3.</b> Turn it on:</p>
+  <p class="muted small"><b>4.</b> Turn it on:</p>
   <form method="post" action="/projects/{{$.Data.Project.ID}}/autofix">
     <input type="hidden" name="csrf" value="{{$.Session.CSRF}}">
     <p><label style="margin:0"><input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}} {{if and (not .Enabled) (not .Daemons)}}disabled{{end}}> Auto-fix high-impact issues in this app</label></p>

@@ -9,6 +9,15 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w" -o /out/app ./cmd/app
+# The auto-fix helper users download from the Setup page
+# (/download/fixassist/..., internal/web/downloads.go), built for each
+# platform so it always matches this server.
+RUN set -e; mkdir -p /out/downloads; \
+    for t in windows/amd64 windows/arm64 darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do \
+      os=${t%/*}; arch=${t#*/}; ext=; [ "$os" = windows ] && ext=.exe; \
+      CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" \
+        -o /out/downloads/fixassist-$os-$arch$ext ./cmd/fixassist; \
+    done
 
 # Visitor countries: this month's DB-IP Lite database (CC BY 4.0, attributed
 # on the dashboard), baked into the image so hosts without a disk or cron
@@ -24,8 +33,10 @@ RUN mkdir -p /geo && cd /geo && \
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/app /app
+COPY --from=build /out/downloads /downloads
 COPY --from=geo /geo/dbip.mmdb /geo/dbip.mmdb
 ENV GEOIP_DB=/geo/dbip.mmdb
+ENV FIXASSIST_DOWNLOADS=/downloads
 USER nonroot:nonroot
 EXPOSE 8787
 ENTRYPOINT ["/app"]
