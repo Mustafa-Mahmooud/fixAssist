@@ -10,12 +10,17 @@ import (
 	"github.com/yourname/fixassist/internal/store/db"
 )
 
+// isOwner: listed in STAFF_EMAILS, so always admin and never demotable.
+func (a *App) isOwner(email string) bool {
+	return slices.Contains(a.Staff, strings.ToLower(email))
+}
+
 // Staff-only area (FDR): ingest rates, 429s, queue depth and lag, AI cost
-// and prompt outcomes, raw issue data. Staff = STAFF_EMAILS; everyone else
-// gets a 404 so the area's existence isn't revealed.
+// and prompt outcomes, raw issue data. Staff = role 'admin' or STAFF_EMAILS;
+// everyone else gets a 404 so the area's existence isn't revealed.
 func (a *App) staffOnly(next http.HandlerFunc) http.Handler {
 	return a.signedIn(func(w http.ResponseWriter, r *http.Request) {
-		if !slices.Contains(a.Staff, strings.ToLower(sessionFrom(r).Email)) {
+		if !sessionFrom(r).Staff {
 			http.NotFound(w, r)
 			return
 		}

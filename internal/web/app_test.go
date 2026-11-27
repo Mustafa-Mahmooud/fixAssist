@@ -431,6 +431,123 @@ func TestAdminIsStaffOnly(t *testing.T) {
 	if b := body(t, resp); strings.Contains(b, `href="/admin"`) {
 		t.Error("admin link shown to a non-staff user")
 	}
+
+	// Staff see every account and can open its app read-only.
+	ctx := context.Background()
+	var orgID int64
+	_ = f.pool.QueryRow(ctx, "select m.org_id from memberships m join users u on u.id = m.user_id where u.email = 'founder@example.com'").Scan(&orgID)
+	p, err := (&projects.Service{Pool: f.pool}).Create(ctx, projects.CreateParams{OrgID: orgID, Name: "founder-shop", Agent: "lovable", Backend: "supabase"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, _ = founder.Get(srv.URL + "/admin/accounts")
+	if body(t, resp); resp.StatusCode != 404 {
+		t.Errorf("founder /admin/accounts: %d, want 404", resp.StatusCode)
+	}
+	resp, _ = staff.Get(srv.URL + "/admin/accounts")
+	if b := body(t, resp); resp.StatusCode != 200 || !strings.Contains(b, "founder@example.com") || !strings.Contains(b, "founder-shop") {
+		t.Errorf("staff /admin/accounts: %d, missing the founder's account or app", resp.StatusCode)
+	}
+	overview := fmt.Sprintf("%s/projects/%d/overview", srv.URL, p.ID)
+	resp, _ = staff.Get(overview)
+	b := body(t, resp)
+	if resp.StatusCode != 200 || !strings.Contains(b, "Staff view of") {
+		t.Errorf("staff overview of another account: %d", resp.StatusCode)
+	}
+	csrf := reCSRF.FindStringSubmatch(b)[1]
+	resp, _ = staff.PostForm(fmt.Sprintf("%s/projects/%d/onboarding/dismiss", srv.URL, p.ID), url.Values{"csrf": {csrf}})
+	if body(t, resp); resp.StatusCode != 404 {
+		t.Errorf("staff POST to another account's app: %d, want 404 (read-only)", resp.StatusCode)
+	}
+	resp, _ = founder.Get(overview)
+	if b := body(t, resp); resp.StatusCode != 200 || strings.Contains(b, "Staff view of") {
+		t.Errorf("owner overview: %d, or shows the staff banner", resp.StatusCode)
+	}
+	// Growth and account detail pages, and the activity they're built on.
+	resp, _ = staff.Get(srv.URL + "/admin/growth")
+	if b := body(t, resp); resp.StatusCode != 200 || !strings.Contains(b, "Activation funnel") || !strings.Contains(b, "founder@example.com") {
+		t.Errorf("staff /admin/growth: %d, or missing the funnel or newest accounts", resp.StatusCode)
+	}
+	resp, _ = founder.Get(srv.URL + "/admin/growth")
+	if body(t, resp); resp.StatusCode != 404 {
+		t.Errorf("founder /admin/growth: %d, want 404", resp.StatusCode)
+	}
+	resp, _ = staff.Get(fmt.Sprintf("%s/admin/accounts/%d", srv.URL, orgID))
+	if b := body(t, resp); resp.StatusCode != 200 || !strings.Contains(b, "founder-shop") || !strings.Contains(b, "Added an app") {
+		t.Errorf("staff account page: %d, or missing the app or its stage", resp.StatusCode)
+	}
+	resp, _ = staff.Get(srv.URL + "/admin/accounts/999999")
+	if body(t, resp); resp.StatusCode != 404 {
+		t.Errorf("unknown account: %d, want 404", resp.StatusCode)
+	}
+	var days int
+	var seen bool
+	_ = f.pool.QueryRow(ctx, `select (select count(*) from user_activity_days a where a.user_id = u.id), u.last_seen_at is not null
+		from users u where u.email = 'founder@example.com'`).Scan(&days, &seen)
+	if days != 1 || !seen {
+		t.Errorf("founder activity: %d days, last_seen set %v; want 1 day and set", days, seen)
+	}
+
+	stranger := signIn("stranger@example.com")
+	resp, _ = stranger.Get(overview)
+	if body(t, resp); resp.StatusCode != 404 {
+		t.Errorf("non-staff overview of another account: %d, want 404", resp.StatusCode)
+	}
+
+	// Roles: admins promote and demote people in the app; STAFF_EMAILS
+	// owners stay admin whatever their role says.
+	userID := func(email string) int64 {
+		var id int64
+		_ = f.pool.QueryRow(ctx, "select id from users where lower(email) = $1", email).Scan(&id)
+		return id
+	}
+	csrfOf := func(c *http.Client, path string) string {
+		resp, _ := c.Get(srv.URL + path)
+		m := reCSRF.FindStringSubmatch(body(t, resp))
+		if m == nil {
+			t.Fatalf("no csrf on %s", path)
+		}
+		return m[1]
+	}
+	setRole := func(c *http.Client, csrf, email, role string) int {
+		resp, _ := c.PostForm(fmt.Sprintf("%s/admin/users/%d/role", srv.URL, userID(email)), url.Values{"csrf": {csrf}, "role": {role}})
+		body(t, resp)
+		return resp.StatusCode
+	}
+	adminStatus := func(c *http.Client) int {
+		resp, _ := c.Get(srv.URL + "/admin")
+		body(t, resp)
+		return resp.StatusCode
+	}
+	if code := setRole(stranger, csrfOf(stranger, "/projects"), "stranger@example.com", "admin"); code != 404 {
+		t.Errorf("non-admin changing a role: %d, want 404", code)
+	}
+	staffCSRF := csrfOf(staff, "/admin/accounts")
+	if code := setRole(staff, staffCSRF, "ops@example.com", "user"); code != 403 {
+		t.Errorf("changing your own role: %d, want 403", code)
+	}
+	if code := setRole(staff, staffCSRF, "founder@example.com", "admin"); code != 200 { // redirect followed
+		t.Errorf("make admin: %d", code)
+	}
+	if code := adminStatus(founder); code != 200 {
+		t.Errorf("promoted founder /admin: %d, want 200", code)
+	}
+	resp, _ = founder.Get(srv.URL + "/projects")
+	if b := body(t, resp); !strings.Contains(b, `href="/admin"`) {
+		t.Error("admin link missing for a promoted admin")
+	}
+	if code := setRole(founder, csrfOf(founder, "/admin/accounts"), "ops@example.com", "user"); code != 200 {
+		t.Errorf("admin demoting an owner: %d", code)
+	}
+	if code := adminStatus(staff); code != 200 {
+		t.Errorf("owner after demotion /admin: %d, want 200 (STAFF_EMAILS always wins)", code)
+	}
+	if code := setRole(staff, staffCSRF, "founder@example.com", "user"); code != 200 {
+		t.Errorf("remove admin: %d", code)
+	}
+	if code := adminStatus(founder); code != 404 {
+		t.Errorf("demoted founder /admin: %d, want 404", code)
+	}
 }
 
 func TestIssuePageShowsTrackRecord(t *testing.T) {

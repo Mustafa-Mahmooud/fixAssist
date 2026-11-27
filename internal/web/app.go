@@ -89,6 +89,10 @@ func (a *App) Register(mux *http.ServeMux) {
 	mux.Handle("POST /projects/{id}/issues/{issue}/feedback", a.signedIn(a.issueFeedback))
 	mux.Handle("POST /projects/{id}/issues/{issue}/applied", a.signedIn(a.issueApplied))
 	mux.Handle("GET /admin", a.staffOnly(a.adminPage))
+	mux.Handle("GET /admin/growth", a.staffOnly(a.adminGrowth))
+	mux.Handle("GET /admin/accounts", a.staffOnly(a.adminAccounts))
+	mux.Handle("GET /admin/accounts/{id}", a.staffOnly(a.adminAccount))
+	mux.Handle("POST /admin/users/{id}/role", a.staffOnly(a.setUserRole))
 	mux.Handle("GET /admin/issues/{id}", a.staffOnly(a.adminIssue))
 	mux.Handle("POST /admin/kb/{id}/reset", a.staffOnly(a.adminUnquarantine))
 	mux.Handle("GET /admin/github", a.staffOnly(a.adminGitHub))
@@ -146,7 +150,8 @@ func (a *App) signedIn(next http.HandlerFunc) http.Handler {
 				return
 			}
 		}
-		sess.Staff = slices.Contains(a.Staff, strings.ToLower(sess.Email))
+		sess.Owner = a.isOwner(sess.Email)
+		sess.Staff = sess.Staff || sess.Owner // role 'admin', or listed in STAFF_EMAILS
 		next(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, &sess)))
 	})
 }
@@ -272,7 +277,19 @@ func (a *App) project(w http.ResponseWriter, r *http.Request) (db.GetOrgProjectR
 		http.NotFound(w, r)
 		return db.GetOrgProjectRow{}, false
 	}
-	p, err := db.New(a.Pool).GetOrgProject(r.Context(), db.GetOrgProjectParams{ID: id, OrgID: sessionFrom(r).OrgID})
+	s := sessionFrom(r)
+	p, err := db.New(a.Pool).GetOrgProject(r.Context(), db.GetOrgProjectParams{ID: id, OrgID: s.OrgID})
+	// Staff can look at any account's project, read-only: only GETs get
+	// past the org check, so every POST still needs the project's own org.
+	if errors.Is(err, pgx.ErrNoRows) && s.Staff && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		var sp db.AdminGetProjectRow
+		sp, err = db.New(a.Pool).AdminGetProject(r.Context(), id)
+		if err == nil {
+			p = db.GetOrgProjectRow{ID: sp.ID, Name: sp.Name, TargetAgent: sp.TargetAgent, Backend: sp.Backend,
+				AllowedDomains: sp.AllowedDomains, KeyPages: sp.KeyPages, PublicKey: sp.PublicKey}
+			s.StaffView = sp.OrgName
+		}
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		http.NotFound(w, r)
 		return p, false

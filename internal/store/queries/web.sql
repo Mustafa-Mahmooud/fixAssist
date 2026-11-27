@@ -28,7 +28,7 @@ where m.user_id = $1 order by m.created_at limit 1;
 insert into web_sessions (id_hash, user_id, csrf_token, expires_at) values ($1, $2, $3, $4);
 
 -- name: GetWebSession :one
-select s.user_id, s.csrf_token, s.expires_at, u.email, u.tips_hidden
+select s.user_id, s.csrf_token, s.expires_at, u.email, u.tips_hidden, u.role, u.last_seen_at
 from web_sessions s join users u on u.id = s.user_id
 where s.id_hash = $1 and s.expires_at > now();
 
@@ -129,3 +129,9 @@ update users set github_id = @github_id where id = @id and (github_id is null or
 
 -- name: CreateUserWithGitHub :one
 insert into users (email, github_id) values (@email, @github_id) returning id, email;
+
+-- name: TouchUser :exec
+-- Last active + one row per active day, for admin analytics.
+with seen as (update users set last_seen_at = now() where id = $1)
+insert into user_activity_days (user_id, day) values ($1, (now() at time zone 'utc')::date)
+on conflict do nothing;

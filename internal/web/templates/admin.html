@@ -1,5 +1,6 @@
 {{define "content"}}
 <h1>Admin</h1>
+{{template "admin_nav" .}}
 <p class="muted">Staff only. <a href="/admin/github">GitHub App</a>. Raw issue data: <code>/admin/issues/&lt;id&gt;</code>. Prometheus metrics: <code>/metrics</code> (localhost or bearer token).</p>
 
 <h2>Fix prompts: did they work?</h2>

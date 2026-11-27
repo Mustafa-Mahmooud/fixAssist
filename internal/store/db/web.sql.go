@@ -264,7 +264,7 @@ func (q *Queries) GetUserByGitHubID(ctx context.Context, githubID pgtype.Int8) (
 }
 
 const getWebSession = `-- name: GetWebSession :one
-select s.user_id, s.csrf_token, s.expires_at, u.email, u.tips_hidden
+select s.user_id, s.csrf_token, s.expires_at, u.email, u.tips_hidden, u.role, u.last_seen_at
 from web_sessions s join users u on u.id = s.user_id
 where s.id_hash = $1 and s.expires_at > now()
 `
@@ -275,6 +275,8 @@ type GetWebSessionRow struct {
 	ExpiresAt  pgtype.Timestamptz
 	Email      string
 	TipsHidden bool
+	Role       string
+	LastSeenAt pgtype.Timestamptz
 }
 
 func (q *Queries) GetWebSession(ctx context.Context, idHash []byte) (GetWebSessionRow, error) {
@@ -286,6 +288,8 @@ func (q *Queries) GetWebSession(ctx context.Context, idHash []byte) (GetWebSessi
 		&i.ExpiresAt,
 		&i.Email,
 		&i.TipsHidden,
+		&i.Role,
+		&i.LastSeenAt,
 	)
 	return i, err
 }
@@ -630,6 +634,18 @@ type SetTipsHiddenParams struct {
 
 func (q *Queries) SetTipsHidden(ctx context.Context, arg SetTipsHiddenParams) error {
 	_, err := q.db.Exec(ctx, setTipsHidden, arg.Hidden, arg.ID)
+	return err
+}
+
+const touchUser = `-- name: TouchUser :exec
+with seen as (update users set last_seen_at = now() where id = $1)
+insert into user_activity_days (user_id, day) values ($1, (now() at time zone 'utc')::date)
+on conflict do nothing
+`
+
+// Last active + one row per active day, for admin analytics.
+func (q *Queries) TouchUser(ctx context.Context, userID int64) error {
+	_, err := q.db.Exec(ctx, touchUser, userID)
 	return err
 }
 

@@ -31,6 +31,7 @@ const (
 	// unused, so active users stay signed in (sliding expiry) without a write
 	// on every request.
 	extendAfter = 24 * time.Hour
+	touchEvery  = 15 * time.Minute // how often last_seen_at is refreshed
 )
 
 // Errors returned to the web layer.
@@ -62,7 +63,13 @@ type Session struct {
 	CSRF    string
 	OrgID   int64
 	OrgName string
-	Staff   bool // set by the web layer from STAFF_EMAILS
+	// Staff: role 'admin', or (set by the web layer) listed in STAFF_EMAILS.
+	Staff bool
+	// Owner: listed in STAFF_EMAILS, so always admin; set by the web layer.
+	Owner bool
+	// StaffView: the other account's name while staff look at its project
+	// (read-only); set by the web layer, empty otherwise.
+	StaffView string
 	// TipsHidden: the person turned off the "what this page shows" notes.
 	TipsHidden bool
 }
@@ -256,11 +263,17 @@ func (s *Service) LoadSession(ctx context.Context, cookie string) (Session, bool
 			return Session{}, false, err
 		}
 	}
+	// Activity for admin analytics, at most every 15 minutes per person. A
+	// failed write only costs a data point, so it never fails the request.
+	if !row.LastSeenAt.Valid || s.now().Sub(row.LastSeenAt.Time) > touchEvery {
+		_ = q.TouchUser(ctx, row.UserID)
+	}
 	org, err := q.FirstOrgForUser(ctx, row.UserID)
 	if err != nil {
 		return Session{}, false, fmt.Errorf("user %d has no org: %w", row.UserID, err)
 	}
-	return Session{UserID: row.UserID, Email: row.Email, CSRF: row.CsrfToken, OrgID: org.ID, OrgName: org.Name, TipsHidden: row.TipsHidden}, true, nil
+	return Session{UserID: row.UserID, Email: row.Email, CSRF: row.CsrfToken, OrgID: org.ID, OrgName: org.Name, TipsHidden: row.TipsHidden,
+		Staff: row.Role == "admin"}, true, nil
 }
 
 // EndSession signs a browser out.

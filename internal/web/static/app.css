@@ -324,6 +324,8 @@ p.kind { display: flex; flex-wrap: wrap; gap: .4rem; }
 .flash.error { border-color: color-mix(in srgb, var(--bad) 35%, transparent); background: var(--bad-soft); color: var(--bad); }
 .flash.error a { color: inherit; text-decoration: underline; }
 .flash.good { border-color: color-mix(in srgb, var(--ok) 35%, transparent); background: var(--ok-soft); }
+.flash.staff-view { border-style: dashed; margin: 0 0 1rem; }
+.flash.staff-view a { text-decoration: underline; }
 
 .empty { text-align: center; padding: 2.75rem 1rem; color: var(--muted); }
 .empty .ico { width: 2.6rem; height: 2.6rem; display: block; margin: 0 auto .75rem; color: var(--border-strong); }
@@ -499,3 +501,20 @@ tr.filtered-out { display: none !important; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Admin analytics */
+.stat b + span { margin-top: .25rem; }
+.funnel { display: grid; gap: .6rem; }
+.funnel-row { display: grid; grid-template-columns: 9.5rem 1fr minmax(9rem, auto); gap: .75rem; align-items: center; }
+.funnel-bar { height: .7rem; border-radius: 999px; background: var(--border); overflow: hidden; }
+.funnel-bar > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+@media (max-width: 600px) { .funnel-row { grid-template-columns: 1fr auto; } .funnel-bar { grid-column: 1 / -1; grid-row: 2; } }
+.pips { display: inline-flex; gap: 3px; vertical-align: middle; }
+.pips i { width: .55rem; height: .55rem; border-radius: 50%; background: var(--border); }
+.pips i.on { background: var(--accent); }
+.stage-list { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; padding: 0; margin: 0 0 .75rem; list-style: none; counter-reset: st; }
+.stage-list li { counter-increment: st; color: var(--muted); }
+.stage-list li::before { content: counter(st) ". "; }
+.stage-list li.done { color: inherit; font-weight: 600; }
+.stage-list li.done::before { content: "✓ "; color: var(--accent); }
+table.members { margin-bottom: .75rem; }

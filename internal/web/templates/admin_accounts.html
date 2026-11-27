@@ -1,0 +1,28 @@
+{{define "content"}}
+<h1>Admin</h1>
+{{template "admin_nav" .}}
+<p class="muted">Every account, who's in it and how its apps are doing. Open an account for the full picture, or an app to see its pages as the owner does, read-only.</p>
+<div class="stats">
+  <div class="stat"><span class="muted small">Accounts</span><b>{{len .Data.Accounts}}</b></div>
+  <div class="stat"><span class="muted small">Apps</span><b>{{.Data.Apps}}</b></div>
+  <div class="stat"><span class="muted small"><span class="hint" title="Accounts with at least one visitor on any of their apps in the last 7 days.">Active this week</span></span><b>{{.Data.Active}}</b></div>
+</div>
+{{range .Data.Accounts}}
+<section class="card table-wrap">
+  <h2><a href="/admin/accounts/{{.ID}}">{{.Name}}</a> <span class="muted small">#{{.ID}}</span></h2>
+  <p class="muted small">Joined {{ago .CreatedAt.Time}} · last active {{if .LastActive.Valid}}{{ago .LastActive.Time}}{{else}}never tracked{{end}} · {{.Visitors}} visitors and {{.Open}} open issues in 7 days · AI ${{printf "%.4f" .AiCostUsd}}</p>
+  <p>{{template "stage_pips" .}} <span class="muted small">· {{.StageHint}}</span></p>
+  <table class="members">
+    <tbody>
+    {{range .Members}}
+      <tr><td>{{.Email}}{{if .Self}} <span class="muted small">(you)</span>{{end}}</td>
+        <td>{{if or .Owner (eq .Role "admin")}}<span class="badge">Admin</span>{{else}}<span class="muted small">User</span>{{end}}</td>
+        <td class="muted small">{{if .LastSeenAt.Valid}}active {{ago .LastSeenAt.Time}}{{end}}</td>
+        <td class="num">{{template "role_button" (roleArgs . $.Session.CSRF)}}</td></tr>
+    {{else}}<tr><td class="muted">No members.</td></tr>{{end}}
+    </tbody>
+  </table>
+  {{template "admin_app_table" .Projects}}
+</section>
+{{else}}<p class="muted">No accounts yet.</p>{{end}}
+{{end}}

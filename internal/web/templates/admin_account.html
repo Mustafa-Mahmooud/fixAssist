@@ -1,0 +1,64 @@
+{{define "content"}}
+{{with .Data.Account}}
+<p class="crumbs muted small"><a href="/admin/accounts">Accounts</a> /</p>
+<h1>{{.Name}} <span class="muted small">#{{.ID}}</span></h1>
+{{template "admin_nav" $}}
+<p class="muted">Joined {{ago .CreatedAt.Time}} · last active {{if .LastActive.Valid}}{{ago .LastActive.Time}}{{else}}never tracked{{end}} · AI cost ${{printf "%.4f" .AiCostUsd}} all time</p>
+
+<div class="stats">
+  <div class="stat"><span class="muted small">Apps</span><b>{{len .Projects}}</b></div>
+  <div class="stat"><span class="muted small">Their visitors</span><b>{{$.Data.Visitors30d}}</b><span class="muted small">30 days</span></div>
+  <div class="stat"><span class="muted small">Their visitors' sign-ups</span><b>{{$.Data.Signups30d}}</b><span class="muted small">30 days</span></div>
+  <div class="stat"><span class="muted small">Open issues</span><b>{{.Open}}</b><span class="muted small">{{$.Data.Fixed}} fixed all time</span></div>
+</div>
+
+<h2>Where they are</h2>
+<div class="card">
+  <ol class="stage-list">
+    {{$stage := .Stage}}
+    {{range $i, $s := $.Data.Stages}}<li class="{{if lt $i $stage}}done{{end}}">{{$s.Label}}</li>{{end}}
+  </ol>
+  <p class="muted small" style="margin-bottom:0">{{.StageHint}}</p>
+</div>
+
+<h2>People</h2>
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>Email</th><th>Role</th><th>Joined</th><th>Last active</th><th class="num"><span class="hint" title="Days they opened the dashboard in the last 30.">Days active</span></th><th></th></tr></thead>
+    <tbody>
+    {{range .Members}}
+      <tr><td>{{.Email}}{{if .Self}} <span class="muted small">(you)</span>{{end}}</td>
+        <td>{{if or .Owner (eq .Role "admin")}}<span class="badge">Admin</span>{{else}}<span class="muted small">User</span>{{end}}</td>
+        <td class="muted small">{{ago .CreatedAt.Time}}</td>
+        <td class="muted small">{{if .LastSeenAt.Valid}}{{ago .LastSeenAt.Time}}{{else}}—{{end}}</td>
+        <td class="num">{{.ActiveDays30d}} / 30</td>
+        <td class="num">{{template "role_button" (roleArgs . $.Session.CSRF)}}</td></tr>
+    {{else}}<tr><td colspan="6" class="muted">No members.</td></tr>{{end}}
+    </tbody>
+  </table>
+</div>
+
+<h2>Last 30 days</h2>
+<div class="grid-2">
+  <div class="card"><p class="muted small" style="margin-top:0">Their visitors</p>{{$.Data.VisitorsChart}}</div>
+  <div class="card"><p class="muted small" style="margin-top:0">Errors caught</p>{{$.Data.ErrorsChart}}</div>
+  <div class="card"><p class="muted small" style="margin-top:0">Their team using the dashboard</p>{{$.Data.ActiveChart}}</div>
+</div>
+
+<h2>Apps</h2>
+<div class="card table-wrap">{{template "admin_app_table" .Projects}}</div>
+
+<h2>Biggest open issues</h2>
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>Issue</th><th>App</th><th class="num">Events</th><th class="num">People</th><th class="num">Last seen</th></tr></thead>
+    <tbody>
+    {{range $.Data.Issues}}
+      <tr><td><a href="/projects/{{.ProjectID}}/issues/{{.ID}}">{{.Title}}</a> <span class="muted small">{{kindName .Kind}} · {{.Status}}</span></td>
+        <td>{{.AppName}}</td><td class="num">{{.EventCount}}</td><td class="num">{{.UserCount}}</td><td class="num muted small">{{ago .LastSeenAt.Time}}</td></tr>
+    {{else}}<tr><td colspan="5" class="muted">No open issues.</td></tr>{{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+{{end}}

@@ -1,0 +1,121 @@
+{{define "content"}}
+<h1>Admin</h1>
+{{template "admin_nav" .}}
+{{with .Data.T}}
+<h2>Growth</h2>
+<div class="stats">
+  <div class="stat"><span class="muted small">Accounts</span><b>{{.Accounts}}</b><span class="muted small">+{{.Accounts30d}} in 30 days · {{$.Data.AccountsTrend}}</span></div>
+  <div class="stat"><span class="muted small">Apps</span><b>{{.Apps}}</b><span class="muted small">+{{.Apps30d}} in 30 days</span></div>
+  <div class="stat"><span class="muted small"><span class="hint" title="Apps with at least one visitor in the last 7 days.">Live apps</span></span><b>{{.LiveApps7d}}</b><span class="muted small">had visitors this week</span></div>
+  <div class="stat"><span class="muted small"><span class="hint" title="People who opened the dashboard. Counted since activity tracking started.">Active users</span></span><b>{{.ActiveUsers7d}}</b><span class="muted small">this week · {{.ActiveUsers30d}} in 30 days</span></div>
+  <div class="stat"><span class="muted small"><span class="hint" title="Weekly active ÷ monthly active people. Higher means people come back often.">Stickiness</span></span><b>{{$.Data.Stickiness}}</b><span class="muted small">week ÷ month</span></div>
+</div>
+
+<h2>Product</h2>
+<div class="stats">
+  <div class="stat"><span class="muted small">Visitors to customers' apps</span><b>{{.Visitors30d}}</b><span class="muted small">30 days · {{$.Data.VisitorsTrend}}</span></div>
+  <div class="stat"><span class="muted small">Errors caught</span><b>{{.Errors30d}}</b><span class="muted small">30 days</span></div>
+  <div class="stat"><span class="muted small">New issues</span><b>{{.Issues30d}}</b><span class="muted small">30 days · {{$.Data.IssuesTrend}}</span></div>
+  <div class="stat"><span class="muted small">Open issues</span><b>{{.OpenIssues}}</b><span class="muted small">{{.Fixed30d}} fixed in 30 days</span></div>
+  <div class="stat"><span class="muted small"><span class="hint" title="Of the fixes people answered about in the last 30 days (explicitly or detected), how many worked.">Fixes that worked</span></span><b>{{$.Data.Worked}}</b><span class="muted small">{{.Worked30d}} worked · {{.Failed30d}} didn't</span></div>
+</div>
+
+<h2>AI spend</h2>
+<div class="stats">
+  <div class="stat"><span class="muted small">AI cost</span><b>${{printf "%.2f" .AiCost30d}}</b><span class="muted small">30 days · {{$.Data.CostTrend}}</span></div>
+  <div class="stat"><span class="muted small">Fix prompts written</span><b>{{.Prompts30d}}</b><span class="muted small">30 days</span></div>
+  <div class="stat"><span class="muted small"><span class="hint" title="30-day AI cost divided by apps that had visitors this week.">Cost per live app</span></span><b>{{$.Data.CostPerApp}}</b><span class="muted small">30 days</span></div>
+</div>
+{{end}}
+
+<h2>Last 30 days</h2>
+<p class="muted small">Hover a bar for the exact number. Days are UTC.</p>
+<div class="grid-2">
+  {{range .Data.Charts}}<div class="card"><p class="muted small" style="margin-top:0">{{.Title}}</p>{{.SVG}}</div>{{end}}
+</div>
+
+<h2>Activation funnel</h2>
+<p class="muted small">How far every account has got, from sign-up to a confirmed fix. The biggest drop is where to help people next.</p>
+<div class="card funnel">
+  {{range .Data.Funnel}}
+  <div class="funnel-row">
+    <span class="funnel-label">{{.Label}}</span>
+    <span class="funnel-bar"><span style="width: {{.Width}}%"></span></span>
+    <span class="num"><b>{{.Count}}</b> <span class="muted small">{{.OfStart}}{{if .FromPrev}} · {{.FromPrev}} of previous, {{.Hint}}{{end}}</span></span>
+  </div>
+  {{end}}
+</div>
+
+<h2>Newest accounts</h2>
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>Account</th><th>Joined</th><th>Last active</th><th>Got to</th><th>Next step</th></tr></thead>
+    <tbody>
+    {{range .Data.Recent}}
+      <tr><td><a href="/admin/accounts/{{.ID}}">{{.Name}}</a></td><td class="muted small">{{ago .CreatedAt.Time}}</td>
+        <td class="muted small">{{if .LastActive.Valid}}{{ago .LastActive.Time}}{{else}}—{{end}}</td>
+        <td>{{template "stage_pips" .}}</td><td class="muted small">{{.StageHint}}</td></tr>
+    {{else}}<tr><td colspan="5" class="muted">No accounts yet.</td></tr>{{end}}
+    </tbody>
+  </table>
+</div>
+
+<h2>Biggest open issues across all apps</h2>
+<p class="muted small">Ranked by impact (people affected, key pages). Open one to see it as the owner does, read-only.</p>
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>Issue</th><th>App · account</th><th class="num">Events</th><th class="num">People</th><th class="num">Last seen</th></tr></thead>
+    <tbody>
+    {{range .Data.Issues}}
+      <tr><td><a href="/projects/{{.ProjectID}}/issues/{{.ID}}">{{.Title}}</a> <span class="muted small">{{kindName .Kind}} · {{.Status}}</span></td>
+        <td>{{.AppName}} <span class="muted small">· <a href="/admin/accounts/{{.OrgID}}">{{.OrgName}}</a></span></td>
+        <td class="num">{{.EventCount}}</td><td class="num">{{.UserCount}}</td><td class="num muted small">{{ago .LastSeenAt.Time}}</td></tr>
+    {{else}}<tr><td colspan="5" class="muted">No open issues anywhere.</td></tr>{{end}}
+    </tbody>
+  </table>
+</div>
+
+<div class="grid-2">
+  <div class="card table-wrap">
+    <h2>Issues by type</h2>
+    <table>
+      <thead><tr><th>Type</th><th class="num">Issues</th><th class="num">Fixed</th><th class="num">Events</th></tr></thead>
+      <tbody>
+      {{range .Data.Kinds}}<tr><td>{{kindName .Kind}}</td><td class="num">{{.Issues}}</td><td class="num">{{.Fixed}}</td><td class="num">{{.Events}}</td></tr>
+      {{else}}<tr><td colspan="4" class="muted">No issues yet.</td></tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+  <div class="card table-wrap">
+    <h2>Apps by AI builder</h2>
+    <table>
+      <tbody>
+      {{range .Data.Builders}}<tr><td>{{agentName .TargetAgent}}</td><td class="num">{{.Apps}} apps</td></tr>
+      {{else}}<tr><td class="muted">No apps yet.</td></tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card table-wrap">
+    <h2>AI by model, 30 days</h2>
+    <table>
+      <thead><tr><th>Model</th><th class="num">Prompts</th><th class="num">Cost</th><th class="num">Avg time</th><th class="num">Tokens in / out</th></tr></thead>
+      <tbody>
+      {{range .Data.Models}}<tr><td><code>{{.Model}}</code></td><td class="num">{{.Prompts}}</td><td class="num">${{printf "%.4f" .CostUsd}}</td><td class="num">{{printf "%.0f" .AvgLatencyMs}} ms</td><td class="num">{{.TokensIn}} / {{.TokensOut}}</td></tr>
+      {{else}}<tr><td colspan="5" class="muted">No prompts in 30 days.</td></tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+  <div class="card table-wrap">
+    <h2>AI cost by account, all time</h2>
+    <table>
+      <tbody>
+      {{range .Data.Costs}}<tr><td><a href="/admin/accounts/{{.ID}}">{{.Name}}</a></td><td class="num">${{printf "%.4f" .Cost}}</td></tr>
+      {{else}}<tr><td class="muted">No AI spend yet.</td></tr>{{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

@@ -460,6 +460,13 @@ type User struct {
 	GithubID   pgtype.Int8
 	CreatedAt  pgtype.Timestamptz
 	TipsHidden bool
+	Role       string
+	LastSeenAt pgtype.Timestamptz
+}
+
+type UserActivityDay struct {
+	UserID int64
+	Day    pgtype.Date
 }
 
 type WebSession struct {

@@ -11,6 +11,43 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adminGetProject = `-- name: AdminGetProject :one
+select p.id, p.name, p.target_agent, p.backend, p.allowed_domains, p.key_pages,
+       coalesce((select k.public_key from project_keys k
+                 where k.project_id = p.id and k.revoked_at is null
+                 order by k.created_at desc limit 1), '')::text as public_key,
+       o.name as org_name
+from projects p join orgs o on o.id = p.org_id where p.id = $1
+`
+
+type AdminGetProjectRow struct {
+	ID             int64
+	Name           string
+	TargetAgent    string
+	Backend        string
+	AllowedDomains []string
+	KeyPages       []string
+	PublicKey      string
+	OrgName        string
+}
+
+// Staff read-only view of any org's project (same columns as GetOrgProject).
+func (q *Queries) AdminGetProject(ctx context.Context, id int64) (AdminGetProjectRow, error) {
+	row := q.db.QueryRow(ctx, adminGetProject, id)
+	var i AdminGetProjectRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.TargetAgent,
+		&i.Backend,
+		&i.AllowedDomains,
+		&i.KeyPages,
+		&i.PublicKey,
+		&i.OrgName,
+	)
+	return i, err
+}
+
 const adminIngestByProject = `-- name: AdminIngestByProject :many
 select p.id, p.name, o.name as org_name,
   (select count(*) from events e where e.project_id = p.id and e.received_at > now() - interval '1 hour')::bigint as events_1h,

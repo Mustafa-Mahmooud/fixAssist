@@ -103,6 +103,7 @@ var funcs = template.FuncMap{
 	"tipFor":      tipFor,
 	"backendName": backendName,
 	"ago":         ago,
+	"roleArgs":    func(m memberView, csrf string) map[string]any { return map[string]any{"M": m, "CSRF": csrf} },
 	"prettyJSON":  prettyJSON,
 	"kindName": func(k string) string {
 		switch k {
@@ -150,7 +151,7 @@ var funcs = template.FuncMap{
 var pages = map[string]*template.Template{}
 
 func init() {
-	for _, p := range []string{"login", "magic", "projects", "setup", "issues", "issue", "alerts", "feedback", "admin", "overview", "pages", "funnels", "insights", "admin_github", "welcome", "privacy"} {
+	for _, p := range []string{"login", "magic", "projects", "setup", "issues", "issue", "alerts", "feedback", "admin", "admin_accounts", "admin_account", "admin_growth", "overview", "pages", "funnels", "insights", "admin_github", "welcome", "privacy"} {
 		pages[p] = template.Must(template.New(p).Funcs(funcs).ParseFS(templateFS,
 			"templates/layout.html", "templates/partials.html", "templates/"+p+".html"))
 	}

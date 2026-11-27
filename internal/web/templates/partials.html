@@ -145,3 +145,30 @@
 </div>
 {{end}}{{end}}
 {{end}}
+
+{{define "admin_nav"}}
+<nav class="tabs main-tabs" aria-label="Admin sections">
+  <a class="{{if eq .Title "Growth"}}on{{end}}" href="/admin/growth"><i class="ico ico-overview"></i>Growth</a>
+  <a class="{{if or (eq .Title "Accounts") (eq .Title "Account")}}on{{end}}" href="/admin/accounts"><i class="ico ico-pages"></i>Accounts</a>
+  <a class="{{if eq .Title "Admin"}}on{{end}}" href="/admin"><i class="ico ico-ok"></i>Fix quality &amp; system</a>
+</nav>
+{{end}}
+
+{{define "stage_pips"}}<span class="pips" title="{{.StageHint}}">{{range $i, $s := .Pips}}<i class="{{if $s}}on{{end}}"></i>{{end}}</span> <span class="small">{{.StageLabel}}</span>{{end}}
+
+{{define "role_button"}}{{with .M}}{{if .Owner}}<span class="hint muted small" title="Listed in STAFF_EMAILS on the server, so always an admin. Change it there.">Owner</span>
+{{else if not .Self}}<form method="post" action="/admin/users/{{.ID}}/role"{{if ne .Role "admin"}} data-confirm="Make {{.Email}} an admin?" data-confirm-text="They'll see the admin area and every account's apps (read-only), and can make other people admins." data-confirm-ok="Make admin"{{end}}><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="role" value="{{if eq .Role "admin"}}user{{else}}admin{{end}}"><button class="link small">{{if eq .Role "admin"}}Remove admin{{else}}Make admin{{end}}</button></form>{{end}}{{end}}{{end}}
+
+{{define "admin_app_table"}}
+<table>
+  <thead><tr><th>App</th><th class="num">Visitors 7 d</th><th class="num">Visitors 30 d</th><th class="num">Errors 24 h</th><th class="num">Open / fixed</th><th class="num">Last error</th><th></th></tr></thead>
+  <tbody>
+  {{range .}}
+    <tr><td>{{.Name}} <span class="muted small">#{{.ID}} · {{agentName .TargetAgent}} · {{backendName .Backend}} · added {{ago .CreatedAt.Time}}</span></td>
+      <td class="num">{{.Visitors7d}}</td><td class="num">{{.Visitors30d}}</td><td class="num">{{.Errors24h}}</td><td class="num">{{.OpenIssues}} / {{.FixedIssues}}</td>
+      <td class="num">{{if .LastIssueAt.Valid}}{{ago .LastIssueAt.Time}}{{else}}—{{end}}</td>
+      <td class="num"><a href="/projects/{{.ID}}/overview">Overview</a> · <a href="/projects/{{.ID}}/pages">Pages</a> · <a href="/projects/{{.ID}}/issues">Issues</a></td></tr>
+  {{else}}<tr><td colspan="7" class="muted">No apps yet: signed up but never added one.</td></tr>{{end}}
+  </tbody>
+</table>
+{{end}}

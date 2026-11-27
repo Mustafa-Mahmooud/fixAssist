@@ -49,3 +49,13 @@ from knowledge_entries where quarantined_at is not null order by quarantined_at 
 
 -- name: AdminUnquarantine :execrows
 update knowledge_entries set quarantined_at = null, worked = 0, failed = 0, confidence = 0.5 where id = $1;
+
+-- name: AdminGetProject :one
+-- Staff read-only view of any org's project (same columns as GetOrgProject).
+select p.id, p.name, p.target_agent, p.backend, p.allowed_domains, p.key_pages,
+       coalesce((select k.public_key from project_keys k
+                 where k.project_id = p.id and k.revoked_at is null
+                 order by k.created_at desc limit 1), '')::text as public_key,
+       o.name as org_name
+from projects p join orgs o on o.id = p.org_id where p.id = $1;
+
