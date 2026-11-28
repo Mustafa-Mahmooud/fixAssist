@@ -35,6 +35,7 @@ type fx struct {
 	token  string
 	other  string // a token for another project
 	nextID int
+	signed bool // the server ships signed daemon builds (Handler.Updates)
 }
 
 // backdate moves everything recorded for the issue back by d, as if d had
@@ -85,7 +86,7 @@ func setup(t *testing.T) *fx {
 	f.token = f.mint(p.ID)
 	f.other = f.mint(p2.ID)
 	mux := http.NewServeMux()
-	(&agentapi.Handler{Pool: pool, Log: log}).Register(mux)
+	(&agentapi.Handler{Pool: pool, Log: log, Updates: func() bool { return f.signed }}).Register(mux)
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
 	return f

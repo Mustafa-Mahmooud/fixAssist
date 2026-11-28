@@ -33,3 +33,6 @@ spike/fixcheck/app/src/buildinfo.js
 # Fine-tuning data exported from production (scrubbed, but customer-derived)
 training/data/
 training/out/
+
+# The daemon update signing key: a Northflank build secret file, never committed.
+.signing/

@@ -18,6 +18,20 @@ RUN set -e; mkdir -p /out/downloads; \
       CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" \
         -o /out/downloads/fixassist-$os-$arch$ext ./cmd/fixassist; \
     done
+# Signed downloads let daemons update themselves (internal/daemonver). The
+# key is a Northflank build secret file at /.signing/fixassist.key (relative
+# to the repository root). It's used only in this build stage and deleted;
+# the final image copies /out alone. Without it nothing is signed and
+# daemons are never offered an update.
+RUN set -e; \
+    if [ -s .signing/fixassist.key ]; then \
+      v=$(sed -n 's/^const Version = "\(.*\)"$/\1/p' internal/daemonver/daemonver.go); \
+      go run ./cmd/signbin sign .signing/fixassist.key "$v" /out/downloads/fixassist-*; \
+      echo "signed fixassist $v downloads"; \
+    else \
+      echo "no .signing/fixassist.key: fixassist downloads are not signed, daemons won't auto-update"; \
+    fi; \
+    rm -rf .signing
 
 # Visitor countries: this month's DB-IP Lite database (CC BY 4.0, attributed
 # on the dashboard), baked into the image so hosts without a disk or cron

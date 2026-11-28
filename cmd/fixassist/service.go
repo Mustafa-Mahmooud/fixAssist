@@ -141,6 +141,14 @@ func cmdStatus() error {
 		state = "unknown on " + runtime.GOOS
 	}
 	fmt.Println("Background watcher:", state)
+	switch pid, ver := runningWatcher(); {
+	case pid == "":
+		fmt.Println("Running: no fixassist watch is running on this computer.")
+	case ver == "":
+		fmt.Printf("Running: a fixassist older than 0.4.0. This command is %s: run fixassist install to switch to it.\n", version)
+	default:
+		fmt.Printf("Running: fixassist %s (pid %s). This command is %s.\n", ver, pid, version)
+	}
 	log, err := logFile()
 	if err != nil {
 		return err

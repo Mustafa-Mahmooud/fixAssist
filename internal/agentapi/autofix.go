@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/yourname/fixassist/internal/autofix"
+	"github.com/yourname/fixassist/internal/daemonver"
 	"github.com/yourname/fixassist/internal/store/db"
 	"github.com/yourname/fixassist/internal/verify"
 )
@@ -95,7 +96,7 @@ func (h *Handler) restClaim(w http.ResponseWriter, r *http.Request) {
 				return map[string]any{"task": t}, nil
 			}
 			if !h.now().Before(deadline) {
-				return map[string]any{"task": nil}, nil
+				return h.withUpdate(r, c, map[string]any{"task": nil})
 			}
 			select {
 			case <-r.Context().Done():
@@ -212,8 +213,31 @@ func (h *Handler) restPRs(w http.ResponseWriter, r *http.Request) {
 		for _, x := range rows {
 			out = append(out, PRView{RunID: x.ID, IssueID: x.IssueID, State: x.State, PRURL: x.PrUrl, AutoMerge: x.AutoMerge})
 		}
-		return map[string]any{"prs": out}, nil
+		return h.withUpdate(r, c, map[string]any{"prs": out})
 	})
+}
+
+// Update is the newest daemon, offered to daemons on their polls.
+type Update struct {
+	Version string `json:"version"`
+	// Auto: this app lets its daemon update itself (Setup's switch). A
+	// daemon serving several apps updates only when all of them allow it.
+	Auto bool `json:"auto"`
+}
+
+// withUpdate adds "update" to a poll's answer when this server ships a
+// signed daemon build. The daemon decides; the signed manifest, not this
+// field, says which version it gets.
+func (h *Handler) withUpdate(r *http.Request, c caller, out map[string]any) (any, error) {
+	if h.Updates == nil || !h.Updates() {
+		return out, nil
+	}
+	set, err := db.New(h.Pool).ProjectAutofix(r.Context(), c.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	out["update"] = Update{Version: daemonver.Version, Auto: set.AutofixAutoupdate}
+	return out, nil
 }
 
 // RunEvent is the daemon reporting progress on a run.

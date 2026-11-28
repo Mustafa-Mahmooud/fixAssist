@@ -460,6 +460,7 @@ type Project struct {
 	AutofixEnabled        bool
 	AutofixRule           string
 	AutofixBranch         string
+	AutofixAutoupdate     bool
 }
 
 type ProjectGithub struct {

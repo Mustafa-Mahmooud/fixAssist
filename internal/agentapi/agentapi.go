@@ -61,6 +61,9 @@ type Handler struct {
 	// ClientIP finds the caller behind a proxy (analytics.Enricher.ClientIP,
 	// which honours TRUST_PROXY); nil means the connection's address.
 	ClientIP func(*http.Request) string
+	// Updates says whether the daemon downloads are signed, so polls can
+	// offer daemonver.Version as an update (web.Downloads.Signed); nil: never.
+	Updates func() bool
 
 	pairs pairLimiter
 }

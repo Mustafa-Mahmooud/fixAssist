@@ -51,6 +51,7 @@ type Event struct {
 type client struct {
 	base, token, host string
 	http              *http.Client
+	update            *Update // what the server offered on the last poll
 }
 
 const claimWait = 25 // seconds, the server's MaxClaimWait
@@ -117,18 +118,26 @@ func unauthorized(err error) bool {
 // claim long-polls for the next task; nil when there is none.
 func (c *client) claim(ctx context.Context) (*Task, error) {
 	var out struct {
-		Task *Task `json:"task"`
+		Task   *Task   `json:"task"`
+		Update *Update `json:"update"`
 	}
 	err := c.do(ctx, http.MethodPost, "/agent/v1/autofix/claim", map[string]any{"hostname": c.host, "version": version, "wait": claimWait}, &out)
+	if err == nil && out.Task == nil {
+		c.update = out.Update
+	}
 	return out.Task, err
 }
 
 func (c *client) prs(ctx context.Context) ([]PRView, error) {
 	var out struct {
-		PRs []PRView `json:"prs"`
+		PRs    []PRView `json:"prs"`
+		Update *Update  `json:"update"`
 	}
 	q := url.Values{"hostname": {c.host}, "version": {version}}
 	err := c.do(ctx, http.MethodGet, "/agent/v1/autofix/prs?"+q.Encode(), nil, &out)
+	if err == nil {
+		c.update = out.Update
+	}
 	return out.PRs, err
 }
 

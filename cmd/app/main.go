@@ -264,6 +264,9 @@ func serve(ctx context.Context, log *slog.Logger, args []string) error {
 	if enabled["web"] {
 		(&web.SDK{Projects: cache, IngestBase: ingestBase(*addr), Log: log}).Register(mux)
 		base := appBase(*addr)
+		// The auto-fix helper's downloads and install scripts; signed ones are
+		// offered to daemons as an update.
+		downloads := &web.Downloads{Dir: os.Getenv("FIXASSIST_DOWNLOADS"), BaseURL: base}
 		(&web.App{
 			Pool:       pool,
 			Auth:       &auth.Service{Pool: pool, Sender: sender, BaseURL: base},
@@ -279,11 +282,11 @@ func serve(ctx context.Context, log *slog.Logger, args []string) error {
 			Code:       code,
 			Model:      model,
 			Log:        log,
+			Updates:    downloads.Signed,
 		}).Register(mux)
+		downloads.Register(mux)
 		// The agent loop: MCP at /mcp, JSON at /agent/v1 (agent tokens).
-		(&agentapi.Handler{Pool: pool, Code: code, Model: model, Log: log, ClientIP: enrich.ClientIP}).Register(mux)
-		// The auto-fix helper's downloads and install scripts.
-		(&web.Downloads{Dir: os.Getenv("FIXASSIST_DOWNLOADS"), BaseURL: base}).Register(mux)
+		(&agentapi.Handler{Pool: pool, Code: code, Model: model, Log: log, ClientIP: enrich.ClientIP, Updates: downloads.Signed}).Register(mux)
 		log.Info("dashboard", "url", base)
 	}
 	if enabled["worker"] {

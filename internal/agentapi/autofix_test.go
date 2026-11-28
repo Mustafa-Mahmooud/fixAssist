@@ -14,6 +14,7 @@ import (
 	"github.com/yourname/fixassist/internal/agentapi"
 	"github.com/yourname/fixassist/internal/ai"
 	"github.com/yourname/fixassist/internal/autofix"
+	"github.com/yourname/fixassist/internal/daemonver"
 	"github.com/yourname/fixassist/internal/store/db"
 )
 
@@ -76,7 +77,7 @@ func (f *fx) highIssue(projectID int64, fixture string) (int64, db.FixSuggestion
 
 func (f *fx) setAutofix(enabled bool, rule string) {
 	f.t.Helper()
-	if err := db.New(f.pool).SetProjectAutofix(context.Background(), db.SetProjectAutofixParams{ID: f.pid, Enabled: enabled, Rule: rule}); err != nil {
+	if err := db.New(f.pool).SetProjectAutofix(context.Background(), db.SetProjectAutofixParams{ID: f.pid, Enabled: enabled, Rule: rule, Autoupdate: true}); err != nil {
 		f.t.Fatal(err)
 	}
 }
@@ -435,5 +436,33 @@ func TestAutofixNotInRepoAndRetry(t *testing.T) {
 	}
 	if task := f.claim(f.token); task == nil || task["base"] != nil {
 		t.Fatalf("invalid stored branch was sent: %v", task)
+	}
+}
+
+// Polls offer the daemon in this build only when it's signed, with the
+// app's auto-update switch.
+func TestAutofixUpdateOffer(t *testing.T) {
+	f := setup(t)
+	poll := func() (map[string]any, map[string]any) {
+		t.Helper()
+		_, c := f.call(f.token, "POST", "/agent/v1/autofix/claim", map[string]any{"hostname": "laptop", "version": "0.3.0", "wait": 0})
+		_, p := f.call(f.token, "GET", "/agent/v1/autofix/prs?hostname=laptop&version=0.3.0", nil)
+		cu, _ := c["update"].(map[string]any)
+		pu, _ := p["update"].(map[string]any)
+		return cu, pu
+	}
+	if c, p := poll(); c != nil || p != nil {
+		t.Fatalf("unsigned build offered: %v %v", c, p)
+	}
+	f.signed = true
+	c, p := poll()
+	if c == nil || c["version"] != daemonver.Version || c["auto"] != true || p == nil || p["auto"] != true {
+		t.Fatalf("signed build: %v %v", c, p)
+	}
+	if err := db.New(f.pool).SetProjectAutofix(context.Background(), db.SetProjectAutofixParams{ID: f.pid, Autoupdate: false, Rule: autofix.RuleOff}); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := poll(); c == nil || c["auto"] != false {
+		t.Fatalf("switched off: %v", c)
 	}
 }

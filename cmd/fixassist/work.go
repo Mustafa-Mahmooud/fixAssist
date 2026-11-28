@@ -54,38 +54,50 @@ func (w *worker) loop(ctx context.Context) {
 	backoff := 5 * time.Second
 	var lastPRCheck time.Time
 	for ctx.Err() == nil {
-		if time.Since(lastPRCheck) > prCheckEach {
-			w.checkPRs(ctx)
-			lastPRCheck = time.Now()
-		}
-		t, err := w.c.claim(ctx)
-		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			if unauthorized(err) && w.reloadToken() {
-				w.logf("the agent token changed in the config: using the new one")
-				backoff = 5 * time.Second
-				continue
-			}
-			w.logf("can't reach Fix Assistant: %v (retrying in %s)", err, backoff)
-			sleep(ctx, backoff)
-			backoff = min(backoff*2, time.Minute)
+		// An update waits for this iteration (a poll, maybe a task) to end,
+		// and no new one starts while it's under way.
+		if !up.begin() {
+			sleep(ctx, 5*time.Second)
 			continue
 		}
-		backoff = 5 * time.Second
-		if t == nil {
-			continue
-		}
-		switch t.Kind {
-		case "fix":
-			w.fix(ctx, t)
-		case "merge":
-			w.merge(ctx, t)
-		default:
-			w.logf("unknown task %q: update fixassist", t.Kind)
-		}
+		backoff = w.iteration(ctx, backoff, &lastPRCheck)
+		up.offer(w.p, w.c.update)
+		up.end()
 	}
+}
+
+// iteration is one poll, and the task it brings; it returns the next
+// backoff.
+func (w *worker) iteration(ctx context.Context, backoff time.Duration, lastPRCheck *time.Time) time.Duration {
+	if time.Since(*lastPRCheck) > prCheckEach {
+		w.checkPRs(ctx)
+		*lastPRCheck = time.Now()
+	}
+	t, err := w.c.claim(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			return backoff
+		}
+		if unauthorized(err) && w.reloadToken() {
+			w.logf("the agent token changed in the config: using the new one")
+			return 5 * time.Second
+		}
+		w.logf("can't reach Fix Assistant: %v (retrying in %s)", err, backoff)
+		sleep(ctx, backoff)
+		return min(backoff*2, time.Minute)
+	}
+	if t == nil {
+		return 5 * time.Second
+	}
+	switch t.Kind {
+	case "fix":
+		w.fix(ctx, t)
+	case "merge":
+		w.merge(ctx, t)
+	default:
+		w.logf("unknown task %q: update fixassist", t.Kind)
+	}
+	return 5 * time.Second
 }
 
 func sleep(ctx context.Context, d time.Duration) {

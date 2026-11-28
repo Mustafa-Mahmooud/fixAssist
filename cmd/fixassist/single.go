@@ -19,7 +19,14 @@ import (
 
 // controlAddr is the takeover port. Only this computer can reach it, and
 // all it accepts is "stop".
-var controlAddr = "127.0.0.1:47815"
+// FIXASSIST_CONTROL_ADDR moves it, to run a second, separate watcher (with
+// its own FIXASSIST_CONFIG) on the same computer, e.g. to try a build.
+var controlAddr = func() string {
+	if a := os.Getenv("FIXASSIST_CONTROL_ADDR"); strings.HasPrefix(a, "127.0.0.1:") {
+		return a
+	}
+	return "127.0.0.1:47815"
+}()
 
 const takeoverHello = "fixassist"
 
@@ -59,6 +66,11 @@ func takeOver(ctx context.Context) context.Context {
 			}
 			_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 			line, _ := bufio.NewReader(conn).ReadString('\n')
+			if strings.TrimSpace(line) == "ping" {
+				fmt.Fprintf(conn, "%s %d %s\n", takeoverHello, os.Getpid(), version)
+				conn.Close()
+				continue
+			}
 			if strings.TrimSpace(line) != "stop" {
 				conn.Close()
 				continue
@@ -88,6 +100,28 @@ func askToStop() (string, bool) {
 		return "", false
 	}
 	reply, _ := bufio.NewReader(conn).ReadString('\n')
-	pid, ok := strings.CutPrefix(strings.TrimSpace(reply), takeoverHello+" ")
+	rest, ok := strings.CutPrefix(strings.TrimSpace(reply), takeoverHello+" ")
+	pid, _, _ := strings.Cut(rest, " ")
 	return pid, ok
+}
+
+// runningWatcher asks the watcher on controlAddr for its pid and version
+// ("" when none answers; version "" from one before 0.4.0, which doesn't
+// know "ping" and just hangs up).
+func runningWatcher() (pid, ver string) {
+	conn, err := net.DialTimeout("tcp", controlAddr, 2*time.Second)
+	if err != nil {
+		return "", ""
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+	if _, err := fmt.Fprintln(conn, "ping"); err != nil {
+		return "", ""
+	}
+	reply, _ := bufio.NewReader(conn).ReadString('\n')
+	f := strings.Fields(reply)
+	if len(f) < 3 || f[0] != takeoverHello {
+		return "?", "" // something is listening: an older watcher
+	}
+	return f[1], f[2]
 }

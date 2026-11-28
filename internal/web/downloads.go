@@ -35,6 +35,21 @@ var DownloadFiles = []DownloadFile{
 	{"fixassist-linux-arm64", "Linux (ARM)"},
 }
 
+// Signed says whether every download has its signature (.sig), so daemons
+// can be offered this build as an update. A build without the signing key
+// (self-hosted, or the secret missing) never offers one.
+func (d *Downloads) Signed() bool {
+	if d.Dir == "" {
+		return false
+	}
+	for _, f := range DownloadFiles {
+		if st, err := os.Stat(filepath.Join(d.Dir, f.File+".sig")); err != nil || st.Size() == 0 {
+			return false
+		}
+	}
+	return true
+}
+
 func (d *Downloads) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /download/fixassist/{file}", d.binary)
 	mux.HandleFunc("GET /install/fixassist.ps1", d.script(installPS1, "text/plain; charset=utf-8"))
@@ -45,7 +60,7 @@ func (d *Downloads) binary(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("file")
 	known := false
 	for _, f := range DownloadFiles {
-		known = known || f.File == name
+		known = known || f.File == name || f.File+".sig" == name
 	}
 	if !known || d.Dir == "" {
 		http.NotFound(w, r)
@@ -60,6 +75,13 @@ func (d *Downloads) binary(w http.ResponseWriter, r *http.Request) {
 	st, err := f.Stat()
 	if err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	if strings.HasSuffix(name, ".sig") {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		http.ServeContent(w, r, name, st.ModTime(), f)
 		return
 	}
 	save := "fixassist"
@@ -92,11 +114,18 @@ $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' 
 $dir = Join-Path $env:LOCALAPPDATA 'fixassist'
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $exe = Join-Path $dir 'fixassist.exe'
-# A running background watcher holds the file: stop it while updating.
+# A running watcher holds the file, and ending the task doesn't always end
+# fixassist itself: stop every running copy (this user's) while updating.
 $installed = $false
 try { schtasks /Query /TN FixAssist 2>$null | Out-Null; $installed = ($LASTEXITCODE -eq 0) } catch {}
-if ($installed) { try { schtasks /End /TN FixAssist 2>$null | Out-Null } catch {}; Start-Sleep -Seconds 2 }
+if ($installed) { try { schtasks /End /TN FixAssist 2>$null | Out-Null } catch {} }
 Invoke-WebRequest -UseBasicParsing -Uri "{{BASE}}/download/fixassist/fixassist-windows-$arch.exe" -OutFile "$exe.new"
+$running = @(Get-Process -Name fixassist -ErrorAction SilentlyContinue)
+if ($running.Count -gt 0) {
+  Write-Host "Stopping the fixassist that is running ($($running.Count))..."
+  $running | Stop-Process -Force -ErrorAction SilentlyContinue
+  $running | Wait-Process -Timeout 15 -ErrorAction SilentlyContinue
+}
 Move-Item -Force "$exe.new" $exe
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (-not $userPath) { $userPath = '' }
@@ -104,7 +133,6 @@ if (($userPath -split ';') -notcontains $dir) {
   [Environment]::SetEnvironmentVariable('Path', (($userPath.TrimEnd(';') + ';' + $dir).TrimStart(';')), 'User')
 }
 if (($env:Path -split ';') -notcontains $dir) { $env:Path += ";$dir" }
-if ($installed) { try { schtasks /Run /TN FixAssist 2>$null | Out-Null } catch {} }
 Write-Host ''
 & $exe version
 Write-Host "Installed to $exe"
@@ -112,7 +140,19 @@ $pair = '{{PAIR}}'
 if ($pair) {
   Write-Host ''
   & $exe pair --server '{{BASE}}' --code $pair --repo (Get-Location).Path
-  if ($LASTEXITCODE -eq 0) { & $exe install }
+  if ($LASTEXITCODE -eq 0) {
+    & $exe install
+  } elseif ($installed) {
+    # Pairing failed, but the watcher was stopped above: start it again
+    # with the apps it already had.
+    & $exe install
+    if ($LASTEXITCODE -ne 0) { try { schtasks /Run /TN FixAssist 2>$null | Out-Null } catch {} }
+  }
+} elseif ($installed) {
+  # An update: point the background watcher at this copy (the task may run
+  # another one) and start it again.
+  & $exe install
+  if ($LASTEXITCODE -ne 0) { try { schtasks /Run /TN FixAssist 2>$null | Out-Null } catch {} }
 } else {
   Write-Host 'Next, copy the install command from the Setup page and run it in your app''s code folder.'
 }
@@ -148,7 +188,15 @@ if [ -n "$pair" ]; then
   echo
   if "$dir/fixassist" pair --server '{{BASE}}' --code "$pair" --repo "$PWD"; then
     "$dir/fixassist" install
+  elif [ -f "$HOME/Library/LaunchAgents/com.fixassist.watch.plist" ] || [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/fixassist.service" ]; then
+    # Pairing failed: still move the background watcher to this version.
+    "$dir/fixassist" install || echo "Couldn't restart the background watcher: run  fixassist install" >&2
   fi
+elif [ -f "$HOME/Library/LaunchAgents/com.fixassist.watch.plist" ] || [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/fixassist.service" ]; then
+  # An update: the running watcher still has the old version in memory.
+  # Reinstalling points the service at this copy and restarts it.
+  echo
+  "$dir/fixassist" install || echo "Couldn't restart the background watcher: run  fixassist install" >&2
 else
   echo 'Next, copy the install command from the Setup page and run it in your app'"'"'s code folder.'
 fi

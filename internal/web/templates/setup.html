@@ -234,7 +234,7 @@ fixassist install</pre>
       <thead><tr><th>Computer</th><th>Token</th><th>Last seen</th></tr></thead>
       <tbody>
       {{range .Daemons}}
-        <tr><td><span class="dot {{if .Online}}ok{{else}}bad{{end}}"></span> {{or .Hostname "unknown"}} {{if .Version}}<span class="muted small">v{{.Version}}</span>{{end}}</td><td>{{.TokenName}}</td><td>{{ago .LastSeenAt.Time}}{{if not .Online}} <span class="muted small">(offline)</span>{{end}}</td></tr>
+        <tr><td><span class="dot {{if .Online}}ok{{else}}bad{{end}}"></span> {{or .Hostname "unknown"}} {{if .Version}}<span class="muted small">v{{.Version}}</span>{{end}}{{if eq .Update "manual"}} <span class="badge open" title="This version can't update itself. On that computer, run the install command under &quot;Or set it up by hand&quot; once; after that it keeps itself up to date.">update: run the install command again</span>{{else if eq .Update "auto"}} <span class="muted small">updates itself to v{{$.Data.Autofix.Latest}} between fixes</span>{{end}}</td><td>{{.TokenName}}</td><td>{{ago .LastSeenAt.Time}}{{if not .Online}} <span class="muted small">(offline)</span>{{end}}</td></tr>
       {{end}}
       </tbody>
     </table>
@@ -253,6 +253,8 @@ fixassist install</pre>
         <option value="high" {{if eq .Rule "high"}}selected{{end}}>Start every high-impact fix without asking (I approve each merge)</option>
       </select>
     </p>
+    <p><label style="margin:0"><input type="checkbox" name="autoupdate" {{if .AutoUpdate}}checked{{end}}> Keep fixassist up to date automatically</label>
+      <span class="muted small">It updates between fixes, only to builds signed by Fix Assistant, and goes back to the old version if the new one doesn't start.</span></p>
     <p class="muted small">Without asking, the pull request still waits for you to approve the merge: the error details in the fix come from your app's visitors, so a person should read the change first. If your default branch doesn't require status checks, nothing merges on its own and you merge on GitHub. If the daemon is offline for 10 minutes, we email you the fix to paste instead.</p>
     <button type="submit" class="secondary" data-busy="Saving…">Save</button>
   </form>

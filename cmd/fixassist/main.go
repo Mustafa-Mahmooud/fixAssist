@@ -23,9 +23,12 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/yourname/fixassist/internal/daemonver"
 )
 
-const version = "0.3.0"
+// version is the shared one, so the server knows exactly which daemon it ships.
+const version = daemonver.Version
 
 // Project is one app the daemon fixes.
 type Project struct {
@@ -41,6 +44,9 @@ type Project struct {
 // Config is the daemon's config file.
 type Config struct {
 	Projects []Project `json:"projects"`
+	// AutoUpdate: false stops the background watcher updating itself
+	// (absent or true: it updates when every app's server allows it).
+	AutoUpdate *bool `json:"auto_update,omitempty"`
 }
 
 func configPath() (string, error) {
@@ -254,6 +260,7 @@ func cmdRemove(args []string) error {
 func cmdWatch(args []string) error {
 	fs := flag.NewFlagSet("watch", flag.ExitOnError)
 	logPath := fs.String("log", "", "append output to this file instead of the terminal (used by install)")
+	handover := fs.Bool("handover", false, "started by an update: check everything works before taking over")
 	_ = fs.Parse(args)
 	if *logPath != "" {
 		f, err := openLog(*logPath)
@@ -265,7 +272,16 @@ func cmdWatch(args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if *handover {
+		// The old version keeps running until this one asks it to stop, and
+		// puts itself back if this one never does: check first.
+		if err := preflight(ctx); err != nil {
+			logf("fixassist %s can't take over: %v", version, err)
+			return err
+		}
+	}
 	ctx = takeOver(ctx)
+	up.exe, up.logPath = thisBinary(), *logPath
 	if *logPath != "" {
 		// In the background nobody sees errors, and the service manager
 		// can't always tell it stopped (Windows' conhost reports success),
@@ -316,6 +332,10 @@ func watch(ctx context.Context) error {
 		return errors.New("the GitHub CLI isn't signed in: run gh auth login")
 	}
 	logf("fixassist %s (pid %d) watching %d app(s). Press Ctrl+C to stop.", version, os.Getpid(), len(cfg.Projects))
+	up.disabled = cfg.AutoUpdate != nil && !*cfg.AutoUpdate
+	updCtx, stopUpdates := context.WithCancel(ctx)
+	defer stopUpdates()
+	go up.run(updCtx, cfg.Projects)
 	var wg sync.WaitGroup
 	for _, p := range cfg.Projects {
 		wg.Add(1)

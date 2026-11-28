@@ -1,13 +1,13 @@
 -- Auto-fix (internal/autofix) ----------------------------------------------
 
 -- name: ProjectAutofix :one
-select autofix_enabled, autofix_rule, autofix_branch from projects where id = $1;
+select autofix_enabled, autofix_rule, autofix_branch, autofix_autoupdate from projects where id = $1;
 
 -- name: SetProjectAutofixBranch :exec
 update projects set autofix_branch = @branch where id = @id;
 
 -- name: SetProjectAutofix :exec
-update projects set autofix_enabled = @enabled, autofix_rule = @rule where id = @id;
+update projects set autofix_enabled = @enabled, autofix_rule = @rule, autofix_autoupdate = @autoupdate where id = @id;
 
 -- name: TouchDaemon :exec
 insert into agent_daemons (token_id, project_id, hostname, version, last_seen_at)

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/yourname/fixassist/internal/agentapi"
 	"github.com/yourname/fixassist/internal/autofix"
+	"github.com/yourname/fixassist/internal/daemonver"
 	"github.com/yourname/fixassist/internal/store/db"
 )
 
@@ -150,7 +150,7 @@ func (a *App) setAutofix(w http.ResponseWriter, r *http.Request) {
 	if r.PostFormValue("rule") == autofix.RuleHigh {
 		rule = autofix.RuleHigh
 	}
-	if err := db.New(a.Pool).SetProjectAutofix(r.Context(), db.SetProjectAutofixParams{ID: p.ID, Enabled: r.PostFormValue("enabled") == "on", Rule: rule}); err != nil {
+	if err := db.New(a.Pool).SetProjectAutofix(r.Context(), db.SetProjectAutofixParams{ID: p.ID, Enabled: r.PostFormValue("enabled") == "on", Rule: rule, Autoupdate: r.PostFormValue("autoupdate") == "on"}); err != nil {
 		a.fail(w, err)
 		return
 	}
@@ -248,6 +248,9 @@ func (a *App) approveAutofixMerge(w http.ResponseWriter, r *http.Request) {
 type DaemonView struct {
 	db.ProjectDaemonsRow
 	Online bool
+	// Update: "" (current), "manual" (too old to update itself: run the
+	// install command again) or "auto" (it updates itself soon).
+	Update string
 }
 
 // autofixSetup is the Setup page's auto-fix section.
@@ -267,7 +270,15 @@ func (a *App) autofixSetup(r *http.Request, projectID int64) (map[string]any, er
 	for _, d := range rows {
 		on := time.Since(d.LastSeenAt.Time) < autofix.OfflineAfter
 		online = online || on
-		daemons = append(daemons, DaemonView{ProjectDaemonsRow: d, Online: on})
+		v := DaemonView{ProjectDaemonsRow: d, Online: on}
+		switch {
+		case !daemonver.Older(d.Version, daemonver.Version):
+		case daemonver.Older(d.Version, SelfUpdatingDaemon):
+			v.Update = "manual"
+		case a.Updates != nil && a.Updates() && set.AutofixAutoupdate:
+			v.Update = "auto"
+		}
+		daemons = append(daemons, v)
 	}
 	total, err := q.CountAutofixRuns(ctx, projectID)
 	if err != nil {
@@ -278,7 +289,7 @@ func (a *App) autofixSetup(r *http.Request, projectID int64) (map[string]any, er
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"Enabled": set.AutofixEnabled, "Rule": set.AutofixRule, "Branch": set.AutofixBranch, "OldDaemon": oldDaemon(rows), "Daemons": daemons, "Online": online,
+	return map[string]any{"Enabled": set.AutofixEnabled, "Rule": set.AutofixRule, "Branch": set.AutofixBranch, "AutoUpdate": set.AutofixAutoupdate, "Latest": daemonver.Version, "OldDaemon": oldDaemon(rows), "Daemons": daemons, "Online": online,
 		"Runs": runs, "RunsPager": pg, "Downloads": DownloadFiles}, nil
 }
 
@@ -286,35 +297,18 @@ func (a *App) autofixSetup(r *http.Request, projectID int64) (map[string]any, er
 // Setup page; older ones keep the branch they were set up with.
 const BranchDaemon = "0.3.0"
 
+// SelfUpdatingDaemon is the first fixassist that updates itself.
+const SelfUpdatingDaemon = "0.4.0"
+
 // oldDaemon is the version of a recently seen daemon that is older than
 // BranchDaemon, or "". Versions it can't read (a dev build) count as new.
 func oldDaemon(rows []db.ProjectDaemonsRow) string {
 	for _, d := range rows {
-		if time.Since(d.LastSeenAt.Time) < 24*time.Hour && olderThan(d.Version, BranchDaemon) {
+		if time.Since(d.LastSeenAt.Time) < 24*time.Hour && daemonver.Older(d.Version, BranchDaemon) {
 			return d.Version
 		}
 	}
 	return ""
-}
-
-// olderThan compares dotted versions ("0.2.1" < "0.3.0"); false when
-// either isn't one.
-func olderThan(v, than string) bool {
-	a, b := strings.Split(v, "."), strings.Split(than, ".")
-	if len(a) != 3 || len(b) != 3 {
-		return false
-	}
-	for i := range a {
-		x, err1 := strconv.Atoi(a[i])
-		y, err2 := strconv.Atoi(b[i])
-		if err1 != nil || err2 != nil {
-			return false
-		}
-		if x != y {
-			return x < y
-		}
-	}
-	return false
 }
 
 // autofixIssue is the issue page's auto-fix block.

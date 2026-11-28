@@ -28,6 +28,9 @@ const sessionCookie = "fix_session"
 
 // App is the founder dashboard (FDR: Go templates + htmx, served by the binary).
 type App struct {
+	// Updates says whether this build's daemon downloads are signed, so
+	// daemons update themselves (Downloads.Signed); nil: never.
+	Updates    func() bool
 	Pool       *pgxpool.Pool
 	Auth       *auth.Service
 	Projects   *projects.Service

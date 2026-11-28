@@ -62,6 +62,23 @@ The [agent loop](agent-loop.md) only runs when the founder asks their coding age
    - **No answer to the approval in 7 days:** the run expires.
    - **Approved, but no daemon polled for 10 minutes:** the founder gets the copy-paste fix prompt by email instead. This is skipped if the instant alert already sent that prompt in the last day.
 
+## Auto-update
+
+From 0.4.0, the background daemon updates itself when a deploy ships a newer one. The server and the daemon are built from the same commit, so the server knows which version it serves (`internal/daemonver`).
+
+1. **The offer.** When every download has a signature (`.sig`, made in the Docker build), polls answer with `"update": {"version", "auto"}`. `auto` is the app's **Keep fixassist up to date** switch on the Setup page (on by default). A daemon serving several apps updates only when every one of them offers it and allows it. `"auto_update": false` in the daemon's config turns it off on that computer.
+2. **The checks, between fixes.** The daemon stops claiming new work and waits until no poll or fix is in flight. It downloads the `.sig` and checks it against the public key built into it. The signed line names the platform's file, a version and a SHA-256; the version must be newer than its own, so a signed old build can't be pushed back. Then it downloads the binary, checks the hash, and runs it with `version`.
+3. **The swap.** The running binary becomes `fixassist.old` (`.old.exe` on Windows), and the new one takes its place. It starts as `watch --handover`, without a window. The new copy first checks its tools, `gh` and each app's token, and only then takes over through the takeover port, which stops the old one.
+4. **Rollback.** If the new copy stops or hasn't taken over within 90 seconds, the old one stops it, puts its own binary back, and skips that version for a day.
+
+Under launchd and systemd, the service restarts once the old process exits, and the restarted one (the new binary) takes over. A watcher in a terminal only says that an update is available. `fixassist status` shows the running version and pid.
+
+**Why signed:** auto-update lets the server replace a program that runs on founders' computers next to their code. The private key is only in the build (a Northflank build secret file, see [deploy-free.md](deploy-free.md#daemon-auto-update-the-signing-key)), never in the running server. Someone who breaks into the server can't hand founders a binary of their own. A build without the key (self-hosted, or the secret missing) never offers an update.
+
+**Daemons before 0.4.0** can't update themselves. The Setup page marks them "update: run the install command again". That means the plain command under **Or set it up by hand** (`irm <server>/install/fixassist.ps1 | iex`, or the `curl … | sh` one). Re-running it now stops the running copy, replaces it and restarts the background watcher, even when a pairing in the same command fails.
+
+**Shipping a daemon change:** it reaches daemons only when `daemonver.Version` is bumped. After a deploy, check the signature with `curl -s <server>/download/fixassist/fixassist-windows-amd64.exe.sig -o x.sig && go run ./cmd/signbin verify x.sig`.
+
 ## Safety
 
 The evidence in a fix prompt (error messages, stack lines, URLs) comes from the app's visitors, so anyone can try to put instructions in it.

@@ -90,6 +90,12 @@ func TestAutofixNotInRepoPage(t *testing.T) {
 	if b := body(t, resp); !strings.Contains(b, "<code>learning</code>") || !strings.Contains(b, "Your fixassist is v0.2.1, which ignores that setting") {
 		t.Error("issue page doesn't name the branch, or doesn't say the daemon is too old for it")
 	}
+	// The daemon list says 0.2.1 needs the install command once; auto-update
+	// is on by default.
+	resp, _ = c.Get(base + "/setup")
+	if b := body(t, resp); !strings.Contains(b, "update: run the install command again") || !strings.Contains(b, `name="autoupdate" checked`) {
+		t.Error("setup doesn't flag the old daemon or the auto-update default")
+	}
 	// Updated: no warning.
 	if _, err := f.pool.Exec(ctx, `update agent_daemons set version = '0.3.0' where token_id = $1`, tokenID); err != nil {
 		t.Fatal(err)

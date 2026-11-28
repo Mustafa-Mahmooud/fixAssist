@@ -68,3 +68,47 @@ func TestDownloads(t *testing.T) {
 		}
 	}
 }
+
+// Signatures are served next to the binaries, and only a build where every
+// download has one is offered to daemons as an update.
+func TestDownloadsSigned(t *testing.T) {
+	dir := t.TempDir()
+	d := &web.Downloads{Dir: dir, BaseURL: "https://fix.example.com"}
+	for _, f := range web.DownloadFiles {
+		if err := os.WriteFile(filepath.Join(dir, f.File), []byte("bin"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if d.Signed() {
+		t.Fatal("unsigned downloads offered as an update")
+	}
+	for i, f := range web.DownloadFiles {
+		if i == len(web.DownloadFiles)-1 {
+			if d.Signed() {
+				t.Fatal("offered with a signature missing")
+			}
+		}
+		if err := os.WriteFile(filepath.Join(dir, f.File+".sig"), []byte("manifest\nsig\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !d.Signed() || (&web.Downloads{}).Signed() {
+		t.Fatal("Signed is wrong")
+	}
+	mux := http.NewServeMux()
+	d.Register(mux)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/download/fixassist/fixassist-linux-amd64.sig")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || string(b) != "manifest\nsig\n" || resp.Header.Get("Content-Disposition") != "" {
+		t.Errorf(".sig: %d %q %q", resp.StatusCode, b, resp.Header.Get("Content-Disposition"))
+	}
+	if resp, _ := http.Get(srv.URL + "/download/fixassist/other.sig"); resp.StatusCode != 404 {
+		t.Errorf("unknown .sig: %d", resp.StatusCode)
+	}
+}

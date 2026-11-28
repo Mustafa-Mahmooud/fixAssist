@@ -74,6 +74,18 @@ One-time setup:
 
 Until both variables are set, the job is skipped and CI behaves as before.
 
+### Daemon auto-update: the signing key
+
+Founders' fixassist daemons update themselves when a deploy ships a newer one, but only to builds signed with Fix Assistant's key ([autofix.md](autofix.md#auto-update)). The build signs them when it finds the key; without it, nothing is signed and no daemon is ever offered an update.
+
+1. The key pair was made once with `go run ./cmd/signbin keygen <file>`. Its public half is in `internal/daemonver/daemonver.go`. Keep the private file safe and out of the repository; `.signing/` is git-ignored.
+2. In Northflank, open the service, go to **Build options > Build arguments** (or **Environment**), and add a **secret file** for builds:
+   - **Mount path:** `/.signing/fixassist.key` (relative to the repository root, where the Dockerfile reads it)
+   - **Content:** the private key file's one line.
+3. Deploy. The build log says `signed fixassist <version> downloads`.
+
+The key is used only in the Dockerfile's build stage and deleted there; the image that runs has no copy, so someone who breaks into the running server can't sign a binary. If the key is ever lost or leaked, make a new pair, put the new public key in `daemonver.go`, and replace the secret: daemons built with the old key then need one manual update (the install command on the Setup page).
+
 ## Limits to keep in mind
 
 - **The free machine is small.** That's fine for a handful of sites. Moving to a paid plan is a setting, not a rebuild.

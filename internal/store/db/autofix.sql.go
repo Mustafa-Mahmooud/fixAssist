@@ -724,20 +724,26 @@ func (q *Queries) OpenAutofixPRs(ctx context.Context, projectID int64) ([]Autofi
 
 const projectAutofix = `-- name: ProjectAutofix :one
 
-select autofix_enabled, autofix_rule, autofix_branch from projects where id = $1
+select autofix_enabled, autofix_rule, autofix_branch, autofix_autoupdate from projects where id = $1
 `
 
 type ProjectAutofixRow struct {
-	AutofixEnabled bool
-	AutofixRule    string
-	AutofixBranch  string
+	AutofixEnabled    bool
+	AutofixRule       string
+	AutofixBranch     string
+	AutofixAutoupdate bool
 }
 
 // Auto-fix (internal/autofix) ----------------------------------------------
 func (q *Queries) ProjectAutofix(ctx context.Context, id int64) (ProjectAutofixRow, error) {
 	row := q.db.QueryRow(ctx, projectAutofix, id)
 	var i ProjectAutofixRow
-	err := row.Scan(&i.AutofixEnabled, &i.AutofixRule, &i.AutofixBranch)
+	err := row.Scan(
+		&i.AutofixEnabled,
+		&i.AutofixRule,
+		&i.AutofixBranch,
+		&i.AutofixAutoupdate,
+	)
 	return i, err
 }
 
@@ -984,17 +990,23 @@ func (q *Queries) SetAutofixPR(ctx context.Context, arg SetAutofixPRParams) (Aut
 }
 
 const setProjectAutofix = `-- name: SetProjectAutofix :exec
-update projects set autofix_enabled = $1, autofix_rule = $2 where id = $3
+update projects set autofix_enabled = $1, autofix_rule = $2, autofix_autoupdate = $3 where id = $4
 `
 
 type SetProjectAutofixParams struct {
-	Enabled bool
-	Rule    string
-	ID      int64
+	Enabled    bool
+	Rule       string
+	Autoupdate bool
+	ID         int64
 }
 
 func (q *Queries) SetProjectAutofix(ctx context.Context, arg SetProjectAutofixParams) error {
-	_, err := q.db.Exec(ctx, setProjectAutofix, arg.Enabled, arg.Rule, arg.ID)
+	_, err := q.db.Exec(ctx, setProjectAutofix,
+		arg.Enabled,
+		arg.Rule,
+		arg.Autoupdate,
+		arg.ID,
+	)
 	return err
 }
 
