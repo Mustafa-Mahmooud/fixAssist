@@ -88,6 +88,7 @@ func (a *App) Register(mux *http.ServeMux) {
 	mux.Handle("GET /projects/{id}/alerts", a.signedIn(a.alertsPage))
 	mux.Handle("GET /projects/{id}/overview", a.signedIn(a.overviewPage))
 	mux.Handle("GET /projects/{id}/pages", a.signedIn(a.pagesPage))
+	mux.Handle("GET /projects/{id}/speed", a.signedIn(a.speedPage))
 	mux.Handle("GET /projects/{id}/funnels", a.signedIn(a.funnelsPage))
 	mux.Handle("GET /projects/{id}/insights", a.signedIn(a.insightsPage))
 	mux.Handle("POST /projects/{id}/insights/generate", a.signedIn(a.generateInsights))

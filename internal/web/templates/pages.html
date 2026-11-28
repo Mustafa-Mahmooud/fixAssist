@@ -4,7 +4,7 @@
 <div id="pages-live" data-live="60">
 <div class="toolbar">
   <h2 style="margin:0">Pages</h2>
-  <span class="muted small">Click a column title to sort.</span>
+  <span class="muted small">Click a column title to sort. How fast pages feel: <a href="/projects/{{.Data.Project.ID}}/speed">Speed</a>.</span>
 </div>
 <div class="card table-wrap" id="pages-table">
   <table>
@@ -14,7 +14,7 @@
       <th class="num" data-sort="num" tabindex="0">Visitors</th>
       <th class="num" data-sort="num" tabindex="0"><span class="hint" title="Out of the people who saw this page, how many closed your app here">Left here</span></th>
       <th class="num" data-sort="num" tabindex="0"><span class="hint" title="The same, for people on phones only">Left here (phone)</span></th>
-      <th class="num" data-sort="num" tabindex="0"><span class="hint" title="How long the page takes to appear, on average. Under 2 s is good.">Load time</span></th>
+      <th class="num" data-sort="num" tabindex="0"><span class="hint" title="How long the whole page takes to finish loading, on average, on the first page of a visit. For what visitors feel (main content, taps, layout jumps), see Speed.">Full load (avg)</span></th>
       <th class="num" data-sort="num" tabindex="0">Open issues</th>
     </tr></thead>
     <tbody>

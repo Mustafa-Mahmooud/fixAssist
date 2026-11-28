@@ -4,10 +4,11 @@
   "version": "0.1.0",
   "description": "Fetch/XHR wrapper, release ID and page views for the pinned Sentry browser SDK",
   "scripts": {
-    "build": "esbuild addon.js --minify --target=es2017 --outfile=dist/addon.min.js",
+    "build": "esbuild addon.js --bundle --format=iife --minify --target=es2017 --outfile=dist/addon.min.js",
     "size": "npm run build && node size.mjs"
   },
   "devDependencies": {
-    "esbuild": "0.25.5"
+    "esbuild": "0.25.5",
+    "web-vitals": "4.2.4"
   }
 }

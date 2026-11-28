@@ -46,11 +46,15 @@ var funcs = template.FuncMap{
 		}
 		return k
 	},
-	"code":    codeText,
-	"list":    func(s ...string) []string { return s },
-	"inc":     func(i int) int { return i + 1 },
-	"add":     func(a, b any) int64 { return toInt64(a) + toInt64(b) },
-	"seconds": func(ms int64) string { return fmt.Sprintf("%.1f s", float64(ms)/1000) },
+	"code":       codeText,
+	"list":       func(s ...string) []string { return s },
+	"inc":        func(i int) int { return i + 1 },
+	"add":        func(a, b any) int64 { return toInt64(a) + toInt64(b) },
+	"seconds":    func(ms int64) string { return fmt.Sprintf("%.1f s", float64(ms)/1000) },
+	"vitalText":  vitalText,
+	"vitalClass": vitalClass,
+	"vitalWord":  vitalWord,
+	"mul100":     func(f float64) float64 { return f * 100 },
 	"deviceName": func(d string) string {
 		switch d {
 		case "mobile":
@@ -167,7 +171,7 @@ var funcs = template.FuncMap{
 var pages = map[string]*template.Template{}
 
 func init() {
-	for _, p := range []string{"login", "magic", "projects", "setup", "issues", "issue", "alerts", "feedback", "admin", "admin_accounts", "admin_account", "admin_growth", "overview", "pages", "funnels", "insights", "admin_github", "welcome", "privacy", "autofix"} {
+	for _, p := range []string{"login", "magic", "projects", "setup", "issues", "issue", "alerts", "feedback", "admin", "admin_accounts", "admin_account", "admin_growth", "overview", "pages", "speed", "funnels", "insights", "admin_github", "welcome", "privacy", "autofix"} {
 		pages[p] = template.Must(template.New(p).Funcs(funcs).ParseFS(templateFS,
 			"templates/layout.html", "templates/partials.html", "templates/"+p+".html"))
 	}

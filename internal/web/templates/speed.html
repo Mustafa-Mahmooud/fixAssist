@@ -1,0 +1,66 @@
+{{define "content"}}
+{{template "project_nav" .}}
+{{$d := .Data}}{{$days := .Data.Range.Days}}
+<div class="toolbar">
+  {{template "range_tabs" .}}
+  <nav class="tabs" aria-label="Device">
+    <a class="{{if eq $d.Device ""}}on{{end}}" href="?days={{$days}}">All devices</a>
+    <a class="{{if eq $d.Device "mobile"}}on{{end}}" href="?days={{$days}}&amp;device=mobile">Phones</a>
+    <a class="{{if eq $d.Device "desktop"}}on{{end}}" href="?days={{$days}}&amp;device=desktop">Computers</a>
+  </nav>
+</div>
+<p class="muted small">Measured in your visitors' browsers. Each number is what 3 out of 4 visits were at least as fast as (the 75th percentile, as Google measures it). Chrome and Edge report all three; Safari and Firefox report only some, so a page may show fewer measurements than visits.</p>
+
+<div id="speed-live" data-live="60">
+<div class="stats">
+  {{range $d.Vitals}}{{$s := index $d.Site.Stats .Name}}
+  <div class="stat">
+    <span class="muted small"><span class="hint" title="{{if eq .Name "LCP"}}How long until the main content (the biggest image or text) shows. Good: under 2.5 s.{{else if eq .Name "INP"}}How long the page takes to respond to a tap, click or key. Good: under 200 ms.{{else}}How much the page jumps around while it loads. Good: under 0.1.{{end}}">{{.Label}} ({{.Name}})</span></span>
+    <b>{{vitalText .Name $s}}</b>
+    <span class="badge {{vitalClass $s.Rating}}">{{vitalWord $s.Rating}}</span>
+    <span class="muted small" data-key="site-{{.Name}}">{{$s.N}} measurements</span>
+  </div>
+  {{end}}
+</div>
+
+{{if $d.Pages}}
+<div class="card table-wrap">
+  <table>
+    <thead><tr>
+      <th data-sort="text" tabindex="0">Page</th>
+      {{range $d.Vitals}}<th class="num" data-sort="num" tabindex="0">{{.Label}}</th>{{end}}
+      <th class="num" data-sort="num" tabindex="0"><span class="hint" title="Loading measurements on this page">Visits measured</span></th>
+      <th>What's slowing it</th>
+    </tr></thead>
+    <tbody>
+    {{range $d.Pages}}{{$pg := .}}
+      <tr>
+        <td><code>{{.Route}}</code></td>
+        {{range $d.Vitals}}{{$s := index $pg.Stats .Name}}
+        <td class="num" data-n="{{if $s.Rating}}{{$s.P75}}{{else}}999999{{end}}">{{if $s.Rating}}<span class="badge {{vitalClass $s.Rating}}" title="{{vitalWord $s.Rating}}">{{vitalText .Name $s}}</span>{{else}}<span class="muted" title="Fewer than {{$d.MinSamples}} measurements">—</span>{{end}}</td>
+        {{end}}
+        <td class="num" data-n>{{(index .Stats "LCP").N}}</td>
+        <td class="small">
+          {{range $d.Vitals}}{{$s := index $pg.Stats .Name}}{{$c := index $pg.Culprits .Name}}
+            {{if and (ne $s.Rating "") (ne $s.Rating "good") (or $c.Element $c.Source)}}
+            <div><b>{{.Label}}:</b> {{if $c.Element}}<code>{{$c.Element}}</code>{{end}}{{if $c.Source}} {{if $c.Element}}from{{end}} <code>{{$c.Source}}</code>{{end}} <span class="muted">({{printf "%.0f" (mul100 $c.Share)}}% of slow visits)</span></div>
+            {{end}}
+          {{end}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+<p class="muted small">Pages with problems come first. “—” means fewer than {{$d.MinSamples}} measurements so far. Elements and file names come from your visitors' browsers.</p>
+{{$fcp := index $d.Site.Stats "FCP"}}{{$ttfb := index $d.Site.Stats "TTFB"}}
+{{if or $fcp.Rating $ttfb.Rating}}<p class="muted small">Also measured, whole app: first paint {{vitalText "FCP" $fcp}} ({{vitalWord $fcp.Rating}}), server response {{vitalText "TTFB" $ttfb}} ({{vitalWord $ttfb.Rating}}).</p>{{end}}
+{{else}}
+<div class="card empty">
+  <i class="ico ico-speed"></i>
+  <b>No speed measurements yet</b>
+  Your snippet measures speed on its own: nothing to set up. Numbers appear here after people visit your app in Chrome or Edge.
+</div>
+{{end}}
+</div>
+{{end}}

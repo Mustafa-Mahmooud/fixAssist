@@ -3,6 +3,7 @@ package ingest
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -50,7 +51,24 @@ type analyticsIn struct {
 // maxAnalyticsPerRequest bounds one batch (the SDK flushes every few seconds).
 const maxAnalyticsPerRequest = 50
 
-var analyticsTypes = map[string]bool{"session_start": true, "click": true, "custom": true, "identify": true, "signup": true, "login": true}
+var analyticsTypes = map[string]bool{"session_start": true, "click": true, "custom": true, "identify": true, "signup": true, "login": true, "vital": true}
+
+// validVital checks a page-speed measurement: a known metric and a value in
+// a sane range (props.v). Anything else is dropped, so a broken or hostile
+// client can't skew the percentiles with impossible numbers.
+func validVital(name string, props map[string]any) bool {
+	v, ok := props["v"].(float64)
+	if !ok || math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
+		return false
+	}
+	switch name {
+	case "CLS":
+		return v <= 10
+	case "LCP", "FCP", "TTFB", "INP":
+		return v <= 120_000
+	}
+	return false
+}
 
 // cleanProps keeps up to 10 simple values, scrubbed and truncated. Objects
 // and arrays are dropped: props are for counting, not for storing records.
@@ -59,6 +77,11 @@ func cleanProps(in map[string]any) []byte {
 		return nil
 	}
 	out := map[string]any{}
+	// A measurement's value always survives the 10-key cap (map order is
+	// random, and a vital carries up to 10 props).
+	if v, ok := in["v"].(float64); ok {
+		out["v"] = v
+	}
 	for k, v := range in {
 		if len(out) >= 10 || len(k) > 40 {
 			continue
@@ -134,6 +157,10 @@ func (h *Handler) parseAnalytics(data []byte, r *http.Request, projectSecret []b
 			row.AccountHash = UserHash(projectSecret, e.Account)
 		case "custom":
 			if row.Name == "" {
+				continue
+			}
+		case "vital":
+			if !validVital(e.Name, e.Props) {
 				continue
 			}
 		}

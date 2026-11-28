@@ -119,7 +119,8 @@ func TestCollectAndRollup(t *testing.T) {
 		`{"type":"session_start","path":"/","referrer":"https://www.google.com/search?q=x"},
 		 {"type":"click","path":"/","name":"Get started","props":{"tag":"button"}},
 		 {"type":"signup","path":"/signup"},
-		 {"type":"identify","path":"/signup","account":"user-42"}`)
+		 {"type":"identify","path":"/signup","account":"user-42"},
+		 {"type":"vital","path":"/","name":"LCP","props":{"v":1800,"rel":"r1"}}`)
 	f.visit("UA-2", "s2", "mobile", []string{"/", "/pricing"},
 		`{"type":"session_start","path":"/","referrer":"","utm":{"utm_source":"Newsletter","utm_campaign":"nov"}},
 		 {"type":"bogus","path":"/"}`)
@@ -131,8 +132,8 @@ func TestCollectAndRollup(t *testing.T) {
 	if n := f.val("select count(*)::text from pageviews where visitor_hash like 'd:%' and device <> ''"); n != "5" {
 		t.Errorf("enriched page views = %s, want 5", n)
 	}
-	if n := f.val("select count(*)::text from analytics_events"); n != "7" {
-		t.Errorf("analytics events = %s, want 7 (unknown type dropped)", n)
+	if n := f.val("select count(*)::text from analytics_events"); n != "8" {
+		t.Errorf("analytics events = %s, want 8 (unknown type dropped; the page-speed vital changes no number below)", n)
 	}
 	if s := f.val("select account_hash from analytics_events where type = 'identify'"); len(s) != 32 || strings.Contains(s, "user-42") {
 		t.Errorf("account hash = %q", s)

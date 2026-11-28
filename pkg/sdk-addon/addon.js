@@ -10,7 +10,12 @@
  *
  * Exposes window.fix = { track(name, props), identify(accountId) } and
  * window.__fix = { release(), sessionId, flush() }.
+ *
+ * Page speed uses Google's web-vitals (pinned in package.json, bundled by
+ * esbuild), so LCP, INP and CLS are measured the way Chrome reports them.
  */
+import { onCLS, onFCP, onINP, onLCP, onTTFB } from "web-vitals/attribution";
+
 (function () {
   "use strict";
   var w = window;
@@ -434,6 +439,76 @@
     };
   });
   w.addEventListener("popstate", routeChanged);
+
+  // ---------- page speed (Core Web Vitals) ----------
+  // Each metric is reported once per page load (and again after a
+  // back/forward-cache restore) for the page it loaded on; in single-page
+  // apps INP and CLS cover the visit from that page. Attribution for fix
+  // prompts: the element as a CSS selector (no text) and the resource or
+  // script URL with query values dropped, plus where the time went.
+  // Browsers without these APIs (Safari has no LCP or INP) report nothing.
+  var vitalsPath = location.pathname;
+  function ms(n) {
+    return typeof n === "number" && isFinite(n) ? Math.round(n) : undefined;
+  }
+  function sel(s) {
+    return typeof s === "string" ? s.slice(-100) : "";
+  }
+  function src(u) {
+    return typeof u === "string" && u ? scrubQuery(u).slice(-100) : "";
+  }
+  // The script that ran longest in the frames behind the slow interaction.
+  // An inline handler reports the page itself: that says nothing, skip it.
+  function slowScript(a) {
+    var best = "", longest = 0, page = location.origin + location.pathname;
+    (a.longAnimationFrameEntries || []).forEach(function (f) {
+      (f.scripts || []).forEach(function (s) {
+        if (s.sourceURL && s.sourceURL.split(/[?#]/)[0] !== page && s.duration > longest) {
+          longest = s.duration;
+          best = s.sourceURL;
+        }
+      });
+    });
+    return best;
+  }
+  function reportVital(m) {
+    try {
+      var a = m.attribution || {};
+      var p = {
+        v: m.name === "CLS" ? Math.round(m.value * 10000) / 10000 : ms(m.value),
+        nav: m.navigationType || "",
+        rel: computeRelease(),
+      };
+      if (m.name === "LCP") {
+        p.el = sel(a.element);
+        p.src = src(a.url);
+        p.ttfb = ms(a.timeToFirstByte);
+        p.rld = ms(a.resourceLoadDelay);
+        p.rlt = ms(a.resourceLoadDuration);
+        p.erd = ms(a.elementRenderDelay);
+      } else if (m.name === "INP") {
+        p.el = sel(a.interactionTarget);
+        p.src = src(slowScript(a));
+        p.id = ms(a.inputDelay);
+        p.pd = ms(a.processingDuration);
+        p.prd = ms(a.presentationDelay);
+      } else if (m.name === "CLS") {
+        p.el = sel(a.largestShiftTarget);
+      }
+      push({ type: "vital", name: m.name, path: vitalsPath, props: p });
+      // CLS and INP arrive as the page is hidden, maybe after the flush.
+      if (document.visibilityState === "hidden") flush();
+    } catch (e) {}
+  }
+  if (analyticsOn()) {
+    try {
+      onLCP(reportVital);
+      onINP(reportVital);
+      onCLS(reportVital);
+      onFCP(reportVital);
+      onTTFB(reportVital);
+    } catch (e) {}
+  }
 
   // Click autocapture: button and link text only (40 characters), never
   // input values; anything inside [data-fix-ignore] is skipped.

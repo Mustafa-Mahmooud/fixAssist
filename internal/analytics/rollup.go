@@ -28,7 +28,7 @@ var dayStatements = []string{
 	 from (
 	   select project_id, visitor_hash, session_id, 'pv' as k from pageviews where ts >= $2 and ts < $3
 	   union all
-	   select project_id, visitor_hash, session_id, type from analytics_events where ts >= $2 and ts < $3
+	   select project_id, visitor_hash, session_id, type from analytics_events where ts >= $2 and ts < $3 and type <> 'vital'
 	 ) x group by project_id`,
 
 	`delete from daily_page_stats where day = $1`,

@@ -211,6 +211,17 @@ type DailySourceStat struct {
 	Signups   int32
 }
 
+type DailyVital struct {
+	ProjectID int64
+	Day       pgtype.Date
+	Route     string
+	Device    string
+	ReleaseID string
+	Metric    string
+	Bucket    int16
+	N         int32
+}
+
 type Event struct {
 	ID          int64
 	ProjectID   int64
