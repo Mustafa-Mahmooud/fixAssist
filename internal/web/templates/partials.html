@@ -92,8 +92,13 @@
     {{range .Issues}}
       <tr data-href="/projects/{{$id}}/issues/{{.ID}}" data-key="row{{.ID}}">
         <td><span class="kind">{{kindName .Kind}}</span><br><a class="title" href="/projects/{{$id}}/issues/{{.ID}}">{{.Title}}</a></td>
+        {{if eq .Kind "perf"}}
+        <td class="num" data-label="people"><span class="muted" title="A slow page: measured in visits, not people">—</span></td>
+        <td class="num" data-label="slow visits"><span data-key="e{{.ID}}" data-n title="Slow visits">{{.EventCount}}</span></td>
+        {{else}}
         <td class="num" data-label="{{if eq .UserCount 1}}person{{else}}people{{end}}"><span data-key="u{{.ID}}" data-n>{{.UserCount}}</span></td>
         <td class="num" data-label="{{if eq .EventCount 1}}time{{else}}times{{end}}"><span data-key="e{{.ID}}" data-n>{{.EventCount}}</span></td>
+        {{end}}
         <td>{{if .Route.String}}<code>{{.Route.String}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
         <td><span class="badge {{.Status}}" title="{{statusHelp .Status}}" data-key="s{{.ID}}">{{statusName .Status}}</span></td>
         <td class="num muted">{{ago .LastSeenAt.Time}}</td>

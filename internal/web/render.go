@@ -132,6 +132,8 @@ var funcs = template.FuncMap{
 			return "Page error"
 		case "server":
 			return "Server error"
+		case "perf":
+			return "Slow page"
 		default:
 			return "Message"
 		}

@@ -26,7 +26,8 @@ where id = @id and not (@domain::text = any(allowed_domains));
 update projects set backend = @backend where id = @id and backend = 'unknown';
 
 -- name: FirstIssueID :one
-select coalesce((select i.id from issues i where i.project_id = $1
+-- Errors only: a slowdown isn't the "first issue caught" moment of setup.
+select coalesce((select i.id from issues i where i.project_id = $1 and i.kind <> 'perf'
   order by i.impact_score desc, i.last_seen_at desc limit 1), 0)::bigint;
 
 -- name: IssueRank :one

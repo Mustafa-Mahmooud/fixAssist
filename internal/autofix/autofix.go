@@ -112,7 +112,9 @@ func Consider(ctx context.Context, pool *pgxpool.Pool, issueID int64, s db.FixSu
 		return db.AutofixRun{}, false, err
 	}
 	p := db.InsertAutofixRunParams{ProjectID: is.ProjectID, IssueID: is.ID, SuggestionID: pgtype.Int8{Int64: s.ID, Valid: true}, State: PendingApproval}
-	if set.AutofixRule == RuleHigh {
+	// Slowdowns always wait for the founder: the agent can't measure speed
+	// itself, so a person decides (founders can still start one any time).
+	if set.AutofixRule == RuleHigh && is.Kind != "perf" {
 		p.State = Approved
 		p.ApprovedBy = pgtype.Text{String: "rule", Valid: true}
 		p.ApprovedAt = ts(now)

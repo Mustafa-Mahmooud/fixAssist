@@ -607,7 +607,16 @@ func (a *App) issuePage(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	if is.Status == "verifying" {
+	if is.Kind == "perf" {
+		// A slowdown: its before and after instead of events, and verified
+		// by speed (internal/perf), not by the event-based progress.
+		pv, err := a.perfIssueView(r, is.ID)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		data["Perf"] = pv
+	} else if is.Status == "verifying" {
 		data["Verify"] = a.verifyProgress(r, p.ID, is)
 	}
 	sug, err := q.LatestSuggestion(r.Context(), is.ID)

@@ -33,6 +33,8 @@ func kindName(k string) string {
 		return "Page error"
 	case "server":
 		return "Server error"
+	case "perf":
+		return "Slow page"
 	}
 	return "Message"
 }

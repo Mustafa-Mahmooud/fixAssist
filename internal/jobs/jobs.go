@@ -18,6 +18,7 @@ import (
 	"github.com/yourname/fixassist/internal/autofix"
 	"github.com/yourname/fixassist/internal/grouping"
 	"github.com/yourname/fixassist/internal/jobs/jobargs"
+	"github.com/yourname/fixassist/internal/perf"
 	"github.com/yourname/fixassist/internal/store"
 	"github.com/yourname/fixassist/internal/store/db"
 	"github.com/yourname/fixassist/internal/verify"
@@ -230,6 +231,31 @@ func (w *VerifyWorker) Work(ctx context.Context, _ *river.Job[jobargs.VerifyFixe
 	return err
 }
 
+// PerfWorker runs perf.Run: page-speed regressions become issues and are
+// explained, alerted and offered for auto-fix by the usual analyze job.
+type PerfWorker struct {
+	river.WorkerDefaults[jobargs.PerfCheck]
+	Pool *pgxpool.Pool
+	Log  *slog.Logger
+}
+
+func (w *PerfWorker) Work(ctx context.Context, _ *river.Job[jobargs.PerfCheck]) error {
+	client, err := river.ClientFromContextSafely[pgx.Tx](ctx)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	enqueue := func(ctx context.Context, tx pgx.Tx, issueID int64, reason string) error {
+		_, err := client.InsertTx(ctx, tx, jobargs.AnalyzeIssue{IssueID: issueID, Reason: reason, Seq: now.Unix()}, nil)
+		return err
+	}
+	st, err := perf.Run(ctx, w.Pool, perf.DefaultRules, now, enqueue)
+	if st != (perf.Stats{}) {
+		w.Log.Info("page speed", "pending", st.Pending, "opened", st.Opened, "reopened", st.Reopened, "updated", st.Updated, "fixed", st.Fixed)
+	}
+	return err
+}
+
 // PartitionsWorker creates the next 7 days of partitions and drops those
 // past retention. Safe to rerun.
 type PartitionsWorker struct {
@@ -288,6 +314,7 @@ func NewClientWith(d Deps) (*river.Client[pgx.Tx], error) {
 	river.AddWorker(workers, &AlertCheckWorker{Notifier: d.Notifier, Log: d.Log})
 	river.AddWorker(workers, &DigestWorker{Notifier: d.Notifier, Log: d.Log})
 	river.AddWorker(workers, &VerifyWorker{Pool: d.Pool, Log: d.Log})
+	river.AddWorker(workers, &PerfWorker{Pool: d.Pool, Log: d.Log})
 	river.AddWorker(workers, &RollupWorker{Pool: d.Pool})
 	river.AddWorker(workers, &RollupTodayWorker{Pool: d.Pool})
 
@@ -319,6 +346,9 @@ func NewClientWith(d Deps) (*river.Client[pgx.Tx], error) {
 			river.NewPeriodicJob(river.PeriodicInterval(15*time.Minute),
 				func() (river.JobArgs, *river.InsertOpts) { return jobargs.VerifyFixes{}, nil },
 				&river.PeriodicJobOpts{RunOnStart: true}),
+			river.NewPeriodicJob(river.PeriodicInterval(time.Hour),
+				func() (river.JobArgs, *river.InsertOpts) { return jobargs.PerfCheck{}, nil },
+				nil),
 		}
 	}
 	return river.NewClient(riverpgxv5.New(d.Pool), cfg)

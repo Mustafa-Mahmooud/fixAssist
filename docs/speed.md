@@ -44,6 +44,32 @@ cd spike && node harness/vitals-check.mjs
 
 It loads a test page in Chrome (via Playwright) with a slow image, a slow button and a late banner. It passes when all five metrics arrive, attributed, with no query values and no page errors.
 
-## Next: catching slowdowns from a release
+## Slowdowns become issues
 
-Not built yet. The histograms keep the release, so the next step can compare a page's p75 in a new release with the one before, and raise an alert or an issue when it gets clearly worse.
+`internal/perf` runs every hour (the `perf_check` job). For each page, metric (LCP, INP, CLS) and device class (phones, computers), it compares the page's current period with the one before:
+
+- **By release:** when the page serves a new release. The SDK's release id hashes the page's own scripts, so pages of one site can differ. Everything measured on the new release is compared with the release the page served just before. If that release has too few measurements, the two weeks of earlier releases are used instead.
+  - A release is judged only once it has been live for 12 hours, because cold caches make the first visits slow.
+  - The "current" release is the one most visits got in the last two days, so a rollback counts as a return to the old one.
+- **By date:** otherwise, for example after a backend-only deploy, which keeps the same release id. The last 3 days are compared with the 2 weeks before.
+
+A slowdown becomes an issue (kind `perf`, one per page and metric, the worse device) only when all of these hold:
+- each side has at least 50 measurements on that device;
+- the rating gets worse (good → needs work → poor) and isn't good;
+- the p75 grows by at least 25%, and by at least 500 ms for LCP, 100 ms for INP or 0.05 for CLS;
+- the regression shows on two runs in a row.
+
+Comparing each device on its own means a shift towards more phone visitors isn't mistaken for a slowdown.
+
+**How a slowdown issue is handled:**
+
+| Step | What happens |
+|---|---|
+| Explanation | From the measurements (`perf_regressions`): before and after, where the time goes, and what slow visits point at. The fix prompt has guardrails for each metric (for example, never lazy-load the main image) and marks the measurements as data. It doesn't use the error analyzer, the knowledge base or the model. |
+| Severity | High when the page is now rated poor, otherwise medium. |
+| Instant alerts | Only for poor slowdowns. The rest go to the daily summary, so they never use up the 3-a-day cap meant for errors. |
+| Auto-fix | Always waits for the founder's approval, even with "start every high-impact fix without asking", because the agent can't measure speed. The auto-fix prompt is a speed-specific one. |
+| Verification | By speed, not by events stopping. The issue is fixed once data from after its fix prompt (a newer release, or a date window that starts later) shows the page back at its earlier level. |
+| Recurrence | If it slows down again, the same issue reopens for the next attempt. The agent's quick check answers "watching": speed needs real visits. |
+
+The issue page shows the before and after, where the time goes and the culprit instead of error counts and the hourly chart. The issues list shows slow visits instead of people and times. Slowdowns don't count as setup's "first issue caught".

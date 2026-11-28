@@ -108,7 +108,7 @@ select
   exists (select 1 from events e where e.project_id = p.id and e.kind = 'server')::boolean as server_errors,
   exists (select 1 from project_github g where g.project_id = p.id and g.repo_full_name is not null)::boolean as code_connected,
   exists (select 1 from agent_tokens t where t.project_id = p.id and t.revoked_at is null)::boolean as agent_connected,
-  coalesce((select i.id from issues i where i.project_id = p.id order by i.impact_score desc, i.last_seen_at desc limit 1), 0)::bigint as first_issue_id
+  coalesce((select i.id from issues i where i.project_id = p.id and i.kind <> 'perf' order by i.impact_score desc, i.last_seen_at desc limit 1), 0)::bigint as first_issue_id
 from projects p where p.id = $1;
 
 -- name: DismissOnboarding :exec

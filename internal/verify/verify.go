@@ -160,6 +160,9 @@ type Stats struct {
 	ProbablyFixed    int
 }
 
+// KindPerf is perf.Kind: slowdowns, verified by internal/perf.
+const KindPerf = "perf"
+
 // KindServer is ingest.KindServer (not imported: ingest doesn't depend on verify, but grouping does).
 const KindServer = "server"
 
@@ -181,6 +184,9 @@ func Run(ctx context.Context, pool *pgxpool.Pool, rules Rules, now time.Time) (S
 		return st, err
 	}
 	for _, is := range list {
+		if is.Kind == KindPerf {
+			continue // slowdowns are verified by speed (internal/perf), not by events stopping
+		}
 		server := is.Kind == KindServer
 		switch is.Status {
 		case "explained":

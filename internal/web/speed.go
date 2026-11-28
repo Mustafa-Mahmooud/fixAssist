@@ -1,10 +1,15 @@
 package web
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/yourname/fixassist/internal/analytics"
+	"github.com/yourname/fixassist/internal/store/db"
 )
 
 // speedPage is the Speed screen: Core Web Vitals (p75) for the whole app
@@ -69,4 +74,43 @@ func vitalWord(rating string) string {
 		return "Poor"
 	}
 	return "Too few visits"
+}
+
+// perfView is a slowdown's before-and-after on its issue page.
+type perfView struct {
+	Metric, Label, Device, Before, Now, Good, Rating string
+	BeforeN, NowN                                    int64
+	Release, Since                                   string
+	Element, Source                                  string
+	Breakdown                                        []string
+}
+
+// perfIssueView loads what a slowdown issue is about.
+func (a *App) perfIssueView(r *http.Request, issueID int64) (*perfView, error) {
+	reg, err := db.New(a.Pool).GetPerfRegression(r.Context(), issueID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	v, _ := analytics.VitalByName(reg.Metric)
+	stat := func(x float64) analytics.VitalStat { return analytics.VitalStat{P75: x, Rating: v.Rating(x)} }
+	pv := &perfView{
+		Metric: reg.Metric, Label: v.Label, Device: map[string]string{"mobile": "Phones", "desktop": "Computers"}[reg.Device],
+		Before: vitalText(reg.Metric, stat(reg.BaselineP75)), Now: vitalText(reg.Metric, stat(reg.CurrentP75)),
+		Good: vitalText(reg.Metric, stat(v.Good)), Rating: v.Rating(reg.CurrentP75),
+		BeforeN: reg.BaselineN, NowN: reg.CurrentN, Release: reg.CurrentRelease, Since: ago(reg.Since.Time),
+		Element: reg.Element, Source: reg.Source,
+	}
+	var b map[string]float64
+	_ = json.Unmarshal(reg.Breakdown, &b)
+	names := map[string]string{"ttfb": "Server response", "rld": "Before the download", "rlt": "Download", "erd": "Render",
+		"id": "Input delay", "pd": "Handler", "prd": "Drawing"}
+	for _, k := range []string{"ttfb", "rld", "rlt", "erd", "id", "pd", "prd"} {
+		if x, ok := b[k]; ok {
+			pv.Breakdown = append(pv.Breakdown, fmt.Sprintf("%s %s", names[k], vitalText("LCP", analytics.VitalStat{P75: x, Rating: "good"})))
+		}
+	}
+	return pv, nil
 }

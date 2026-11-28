@@ -5,6 +5,15 @@
 {{with .Data.Issue}}
 <p class="kind">{{kindName .Kind}} <span class="badge {{.Status}}" title="{{statusHelp .Status}}">{{statusName .Status}}</span>{{if gt .RegressionCount 0}} <span class="badge open">came back {{.RegressionCount}}×</span>{{end}}</p>
 <h1 style="overflow-wrap:anywhere">{{.Title}}</h1>
+{{with $.Data.Perf}}
+<div class="stats" id="issue-stats" data-live="60">
+  <div class="stat"><span class="muted small"><i class="ico ico-speed"></i>{{.Label}} now</span><b data-key="now">{{.Now}}</b><span class="badge {{vitalClass .Rating}}">{{vitalWord .Rating}}</span></div>
+  <div class="stat"><span class="muted small"><i class="ico ico-clock"></i>Before</span><b>{{.Before}}</b><span class="muted small">good is under {{.Good}}</span></div>
+  <div class="stat"><span class="muted small"><i class="ico ico-pages"></i>Page</span><b class="text">{{$i.Route.String}}</b><span class="muted small">{{.Device}}</span></div>
+  <div class="stat"><span class="muted small"><i class="ico ico-users"></i>Slow visits</span><b data-n data-key="slow">{{$i.EventCount}}</b><span class="muted small">of {{.NowN}} measured</span></div>
+  <div class="stat"><span class="muted small"><i class="ico ico-clock"></i>Slower since</span><b class="text">{{.Since}}</b>{{if .Release}}<span class="muted small" title="{{.Release}}">new version</span>{{end}}</div>
+</div>
+{{else}}
 <div class="stats" id="issue-stats" data-live="20">
   <div class="stat"><span class="muted small"><i class="ico ico-users"></i>People affected</span><b data-n data-key="users">{{.UserCount}}</b></div>
   <div class="stat"><span class="muted small"><i class="ico ico-issues"></i>Times it happened</span><b data-n data-key="events">{{.EventCount}}</b></div>
@@ -13,10 +22,19 @@
   <div class="stat"><span class="muted small"><i class="ico ico-clock"></i>Last seen</span><b class="text" data-key="last">{{ago .LastSeenAt.Time}}</b></div>
 </div>
 {{end}}
+{{end}}
+{{with $.Data.Perf}}
+<div class="card">
+  <p class="muted small" style="margin-top:0">Measured in visitors' browsers: the 75th percentile, before ({{.BeforeN}} visits) and now ({{.NowN}} visits). <a href="/projects/{{$p.ID}}/speed">All pages' speed</a></p>
+  {{if .Breakdown}}<p class="small"><b>Where the time goes</b> (slow visits, average): {{range $n, $b := .Breakdown}}{{if $n}} · {{end}}{{$b}}{{end}}</p>{{end}}
+  {{if or .Element .Source}}<p class="small"><b>What slow visits point at:</b> {{if .Element}}<code>{{.Element}}</code>{{end}}{{if .Source}} {{if .Element}}from {{end}}<code>{{.Source}}</code>{{end}}</p>{{end}}
+</div>
+{{else}}
 <div class="card" id="issue-spark" data-live="60">
   <p class="muted small" style="margin-top:0">How often it happened: last 7 days, per hour</p>
   {{.Data.Spark}}
 </div>
+{{end}}
 
 {{with .Data.Suggestion}}
 <section class="card step-card">
@@ -66,9 +84,11 @@
     {{else}}
       <p class="muted">Waiting for your next published version; we'll check automatically once it's live.</p>
     {{end}}
+  {{else}}{{if $.Data.Perf}}
+    <p class="muted">After you publish the fix we measure the new version in your visitors' browsers and mark this fixed once the page is back to its earlier speed. That takes some visits, usually about a day. You can also tell us yourself; your answer always wins.</p>
   {{else}}
     <p class="muted">After you publish the fix we check automatically. You can also tell us yourself; your answer always wins.</p>
-  {{end}}
+  {{end}}{{end}}
   <div class="answer-row">
     {{range $o := (list "worked" "failed" "partial")}}
     <form method="post" action="/projects/{{$p.ID}}/issues/{{$i.ID}}/feedback">

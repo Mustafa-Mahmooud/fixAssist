@@ -453,6 +453,32 @@ type PairCode struct {
 	TokenID   pgtype.Int8
 }
 
+type PerfCandidate struct {
+	ProjectID   int64
+	Route       string
+	Metric      string
+	FirstSeenAt pgtype.Timestamptz
+}
+
+type PerfRegression struct {
+	IssueID        int64
+	ProjectID      int64
+	Route          string
+	Metric         string
+	Device         string
+	BaselineP75    float64
+	BaselineN      int64
+	CurrentP75     float64
+	CurrentN       int64
+	CurrentRelease string
+	Since          pgtype.Timestamptz
+	Element        string
+	Source         string
+	Breakdown      []byte
+	DetectedAt     pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+}
+
 type Project struct {
 	ID                    int64
 	OrgID                 int64

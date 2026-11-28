@@ -69,7 +69,7 @@ func (q *Queries) DigestFixedSince(ctx context.Context, arg DigestFixedSincePara
 }
 
 const digestNewIssues = `-- name: DigestNewIssues :many
-select i.id, i.title, i.user_count, i.event_count, i.route, i.status,
+select i.id, i.title, i.user_count, i.event_count, i.route, i.status, i.kind,
        (select s.severity from fix_suggestions s where s.issue_id = i.id order by s.created_at desc limit 1)::text as severity
 from issues i
 where i.project_id = $1 and i.first_seen_at >= $2 and i.status <> 'ignored'
@@ -88,6 +88,7 @@ type DigestNewIssuesRow struct {
 	EventCount int64
 	Route      pgtype.Text
 	Status     string
+	Kind       string
 	Severity   string
 }
 
@@ -107,6 +108,7 @@ func (q *Queries) DigestNewIssues(ctx context.Context, arg DigestNewIssuesParams
 			&i.EventCount,
 			&i.Route,
 			&i.Status,
+			&i.Kind,
 			&i.Severity,
 		); err != nil {
 			return nil, err

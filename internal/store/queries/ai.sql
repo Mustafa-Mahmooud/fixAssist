@@ -83,7 +83,7 @@ select count(*) from alert_log where project_id = $1;
 select id, name, timezone from projects order by id;
 
 -- name: DigestNewIssues :many
-select i.id, i.title, i.user_count, i.event_count, i.route, i.status,
+select i.id, i.title, i.user_count, i.event_count, i.route, i.status, i.kind,
        (select s.severity from fix_suggestions s where s.issue_id = i.id order by s.created_at desc limit 1)::text as severity
 from issues i
 where i.project_id = $1 and i.first_seen_at >= $2 and i.status <> 'ignored'

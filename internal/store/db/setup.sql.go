@@ -95,10 +95,11 @@ func (q *Queries) DeleteRejectedOrigin(ctx context.Context, arg DeleteRejectedOr
 }
 
 const firstIssueID = `-- name: FirstIssueID :one
-select coalesce((select i.id from issues i where i.project_id = $1
+select coalesce((select i.id from issues i where i.project_id = $1 and i.kind <> 'perf'
   order by i.impact_score desc, i.last_seen_at desc limit 1), 0)::bigint
 `
 
+// Errors only: a slowdown isn't the "first issue caught" moment of setup.
 func (q *Queries) FirstIssueID(ctx context.Context, projectID int64) (int64, error) {
 	row := q.db.QueryRow(ctx, firstIssueID, projectID)
 	var column_1 int64

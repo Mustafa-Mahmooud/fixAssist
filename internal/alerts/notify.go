@@ -109,6 +109,11 @@ func (n *Notifier) CheckInstant(ctx context.Context, issueID int64) (InstantResu
 	if s.CatalogKey.String == "setup.test_error" {
 		return SkipLowImpact, nil
 	}
+	// Slowdowns email right away only when the page is rated poor; the rest
+	// wait for the daily summary, so they never use up the cap meant for errors.
+	if is.Kind == "perf" && s.Severity != "high" {
+		return SkipLowImpact, nil
+	}
 	impact, _ := is.ImpactScore.Float64Value()
 	regressed := is.Status == "open" && is.RegressionCount > 0
 	if impact.Float64 < InstantMinImpact && !regressed {
@@ -289,9 +294,11 @@ func (n *Notifier) RunDigests(ctx context.Context) (int, error) {
 					sev = " [" + i.Severity + "]"
 				}
 				meta := countWord(i.UserCount, "person", "people") + " affected, " + countWord(i.EventCount, "time", "times")
+				if i.Kind == "perf" { // a slowdown: slow visits, not errors
+					meta = countWord(i.EventCount, "slow visit", "slow visits")
+				}
 				url := fmt.Sprintf("%s/projects/%d/issues/%d", base, p.ID, i.ID)
-				fmt.Fprintf(&b, "- %s%s: %s, %s\n  %s\n", i.Title, sev,
-					countWord(i.UserCount, "person", "people"), countWord(i.EventCount, "time", "times"), url)
+				fmt.Fprintf(&b, "- %s%s: %s\n  %s\n", i.Title, sev, meta, url)
 				e.Items = append(e.Items, Item{Title: i.Title, Meta: meta, URL: url, Badge: i.Severity})
 			}
 			b.WriteString("\n")

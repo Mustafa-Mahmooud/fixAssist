@@ -90,6 +90,16 @@ func (RollupToday) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{Queue: QueueMaintenance, UniqueOpts: river.UniqueOpts{ByPeriod: time.Minute}}
 }
 
+// PerfCheck finds page-speed regressions and verifies fixed ones (hourly,
+// internal/perf). In the maintenance queue, so it never runs during a rollup.
+type PerfCheck struct{}
+
+func (PerfCheck) Kind() string { return "perf_check" }
+
+func (PerfCheck) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{Queue: QueueMaintenance, UniqueOpts: river.UniqueOpts{ByPeriod: 30 * time.Minute}}
+}
+
 // Partitions runs partition maintenance.
 type Partitions struct{}
 

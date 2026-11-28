@@ -155,6 +155,13 @@ func QuickCheck(ctx context.Context, pool *pgxpool.Pool, is db.Issue, reproduced
 		out.Message = fmt.Sprintf("The error came back after attempt %d. Call get_issue for the new evidence and the attempt %d prompt, then try again.", out.Attempt, out.Attempt+1)
 		return out, nil
 	}
+	if is.Kind == KindPerf {
+		// A slowdown has no error to repeat: speed is measured in visitors'
+		// browsers on the new version, which takes real visits and time.
+		out.State = StateWatching
+		out.Message = "This is a speed issue: Fix Assistant measures the new version in real visitors' browsers and marks it fixed once the page is back to its earlier speed. That needs a deploy and some visits (usually a day). Nothing more to do now; check again tomorrow."
+		return out, nil
+	}
 	if reproduced && !last.ReproducedAt.Valid {
 		if err := q.MarkAttemptReproduced(ctx, db.MarkAttemptReproducedParams{ID: last.ID, At: ts(now)}); err != nil {
 			return out, err

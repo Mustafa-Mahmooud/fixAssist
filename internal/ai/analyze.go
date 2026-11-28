@@ -103,6 +103,14 @@ type Analyzer struct {
 // Analyze explains one issue and stores the suggestion.
 func (a *Analyzer) Analyze(ctx context.Context, pool *pgxpool.Pool, issueID int64, attempt int) (int64, Suggestion, error) {
 	var id int64
+	// Slowdowns have no events to analyze: every path that explains an
+	// issue (new, came back, next attempt, re-explain) comes through here.
+	if is, err := db.New(pool).GetIssueForAnalysis(ctx, issueID); err == nil && is.Kind == KindPerf {
+		if attempt <= 0 { // AttemptAuto or AttemptAfterFailure: one more than the times it came back
+			attempt = 1 + int(is.RegressionCount)
+		}
+		return explainPerf(ctx, pool, is, attempt)
+	}
 	c, err := Load(ctx, db.New(pool), issueID, attempt)
 	if err != nil {
 		return 0, Suggestion{}, err
